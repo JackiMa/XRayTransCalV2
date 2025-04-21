@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  xray-calculator:
+    build: .
+    container_name: xray-calculator
+    ports:
+      - "5000:8501"
+    volumes:
+      - ./processed_nist_xcom_data:/app/processed_nist_xcom_data
+      - ./tmp_plots:/app/tmp_plots
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1 
