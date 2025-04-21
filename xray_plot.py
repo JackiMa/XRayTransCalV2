@@ -111,6 +111,8 @@ def plot_element_cross_sections(element: Element,
              warnings.warn(f"Element {element.symbol} data is not loaded. Cannot plot {col}.")
              continue # Skip this column if data isn't loaded
         values = element.get_cross_section(energies, col)
+        # 替换 inf、nan、负值为 np.nan
+        values[values <= 1e-10] = np.nan
         if values is not None and np.any(np.isfinite(values)):
              # Use standard plot, scales set later
              ax.plot(energies, values, label=label, linewidth=1.5 if linestyle != '--' else 2.0,
@@ -322,18 +324,18 @@ def plot_compound_effect_contributions(elements: Elements,
         # --- Plotting Lines ---
         plot_successful = False
         effect_plot_params = { # Define colors/styles for effects
-            'Photoelectric': ('Photoelectric', 'blue', '-'),
-            'Coherent': ('Coherent', 'green', '-'),
-            'Incoherent': ('Incoherent', 'red', '-'),
-            'Nuclear': ('Pair (Nuclear)', 'purple', ':'),
-            'Electron': ('Pair (Electron)', 'orange', ':')
+            'Photoelectric':  ('Photoelectric Absorption', None, '-'),
+            'Coherent': ('Coherent Scattering', None, '-'), 
+            'Incoherent': ('Incoherent Scattering', None, '-'),
+            'Nuclear': ('Pair Production (Nuclear)', None, '-'),
+            'Electron': ('Pair Production (Electron)', None, '-')
         }
 
         for effect_key, (label, color, linestyle) in effect_plot_params.items():
             data = effect_contributions.get(effect_key)
-            if data is not None and np.any(np.isfinite(data)):
-                ax.plot(energies, data, label=label, color=color, linestyle=linestyle, linewidth=1.5)
-                plot_successful = True
+            data[data <= 1e-10] = np.nan
+            ax.plot(energies, data, label=label, color=color, linestyle=linestyle, linewidth=1.5)
+            plot_successful = True
 
         # Plot Total (with coherent) line
         if total_mu_rho_w_coh is not None and np.any(np.isfinite(total_mu_rho_w_coh)):
@@ -732,18 +734,19 @@ def plot_mixture_effect_contributions(elements: Elements,
         # --- Plotting Lines ---
         plot_successful = False
         effect_plot_params = { # Use same colors/styles as compound plot
-            'Photoelectric': ('Photoelectric', 'blue', '-'),
-            'Coherent': ('Coherent', 'green', '-'),
-            'Incoherent': ('Incoherent', 'red', '-'),
-            'Nuclear': ('Pair (Nuclear)', 'purple', ':'),
-            'Electron': ('Pair (Electron)', 'orange', ':')
+            'Photoelectric':  ('Photoelectric Absorption', None, '-'),
+            'Coherent': ('Coherent Scattering', None, '-'), 
+            'Incoherent': ('Incoherent Scattering', None, '-'),
+            'Nuclear': ('Pair Production (Nuclear)', None, '-'),
+            'Electron': ('Pair Production (Electron)', None, '-')
         }
 
         for effect_key, (label, color, linestyle) in effect_plot_params.items():
             data = mixture_effect_contributions.get(effect_key)
-            if data is not None and np.any(np.isfinite(data)):
-                 ax.plot(energies, data, label=label, color=color, linestyle=linestyle, linewidth=1.5)
-                 plot_successful = True
+            # 替换 inf、nan、负值为 np.nan
+            data[data <= 1e-10] = np.nan
+            ax.plot(energies, data, label=label, color=color, linestyle=linestyle, linewidth=1.5)
+            plot_successful = True
 
         # Plot Total mixture line
         if total_mu_rho_mix is not None and np.any(np.isfinite(total_mu_rho_mix)):

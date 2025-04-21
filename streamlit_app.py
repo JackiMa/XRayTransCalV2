@@ -165,9 +165,9 @@ def main():
             
             energy_min = st.number_input(
                 "Minimum Energy (MeV)",
-                min_value=0.0001,
+                min_value=0.001,
                 max_value=100000.0,
-                value=0.1,
+                value=0.01,
                 format="%.4f",
                 key="element_energy_min"
             )
@@ -314,10 +314,9 @@ def main():
                             st.subheader("Element Interaction Effects")
                             col_effects1, col_effects2 = st.columns(2)
                             with col_effects1:
-                                st.write("主要物理效应包括：光电效应、相干散射、非相干散射、对产生等")
+                                st.write("主要物理效应包括：光电效应、相干/非相干散射和对产生")
                             with col_effects2:
-                                # 额外的效应说明或控制选项可以放在这里
-                                pass
+                                st.write("data from https://physics.nist.gov/PhysRefData/Xcom/html/xcom1.html")
                         else:
                             st.error("无法生成图表，请检查参数设置。")
                     else:
@@ -452,7 +451,7 @@ def main():
                 "Minimum Energy (MeV)",
                 min_value=0.001,
                 max_value=100000.0,
-                value=0.1,
+                value=0.01,
                 format="%.4f",
                 key="compound_energy_min"
             )
@@ -899,7 +898,7 @@ def main():
                 "Minimum Energy (MeV)",
                 min_value=0.001,
                 max_value=100000.0,
-                value=0.1,
+                value=0.01,
                 format="%.4f",
                 key="mixture_energy_min"
             )

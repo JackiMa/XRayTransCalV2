@@ -159,7 +159,7 @@ class Element:
             try:
                 self.data = pd.read_csv(
                     data_io,
-                    sep='\s+',
+                    sep=r'\s+',
                     header=None,
                     names=COLUMN_NAMES,
                     engine='python'
@@ -209,6 +209,10 @@ class Element:
         try:
             energies = self.data['Energy (MeV)'].values
             values = self.data[column].values
+            
+            # 记录零值位置
+            zero_mask = (values == 0)
+            
             if np.any(values <= 0):
                 min_positive = np.min(values[values > 0]) if np.any(values > 0) else 1e-10
                 values = np.maximum(values, min_positive * 0.1)
@@ -226,6 +230,8 @@ class Element:
                 else: # 0 个有效点，返回极小值
                     interp = lambda log_e: np.full_like(log_e, -10.0)
                 self._interpolators[column] = interp
+                # 存储零值位置
+                self._interpolators[f"{column}_zeros"] = zero_mask
             else:
                 interp = interp1d(
                     log_energies[valid_indices], 
@@ -235,11 +241,14 @@ class Element:
                     fill_value=(log_values[valid_indices][0], log_values[valid_indices][-1])
                 )
                 self._interpolators[column] = interp
+                # 存储零值位置
+                self._interpolators[f"{column}_zeros"] = zero_mask
                 
         except Exception as e:
             warnings.warn(f"为 {self.symbol} {column} 创建插值器时出错: {e}")
             print(traceback.format_exc())
             self._interpolators[column] = None
+            self._interpolators[f"{column}_zeros"] = None
 
     def get_cross_section(self, energies: Union[float, List[float], np.ndarray], column: str) -> Optional[np.ndarray]:
         """获取指定能量下的特定截面数据"""
@@ -276,15 +285,34 @@ class Element:
             )
         # 处理零或负能量
         if np.any(clipped_energies <= 0):
-             min_positive_energy = self.energy_min if self.energy_min > 0 else 1e-9
-             clipped_energies = np.maximum(clipped_energies, min_positive_energy)
-             warnings.warn(f"部分能量值小于或等于零，已调整为最小正能量 {min_positive_energy:.3e} MeV")
-        
+            min_positive_energy = self.energy_min if self.energy_min > 0 else 1e-9
+            clipped_energies = np.maximum(clipped_energies, min_positive_energy)
+            warnings.warn(f"部分能量值小于或等于零，已调整为最小正能量 {min_positive_energy:.3e} MeV")
         try:
             log_energies = np.log10(clipped_energies)
             log_results = interpolator(log_energies)
             results = np.power(10.0, log_results)
-            results[~np.isfinite(results)] = 1e-10 # 替换可能的非有限值
+            
+            # 从原始数据中识别能量对应的值是否为零
+            # 对于对产生效应，低能量区域的值应该全为零（小于特定阈值）
+            # 先检查是否存在零值记录
+            zero_mask = self._interpolators.get(f"{column}_zeros")
+            
+            # 特别处理Nuclear和Electron对产生效应，这些效应在低能量区域应该为零
+            if column in ['Nuclear (cm2/g)', 'Electron (cm2/g)']:
+                # 判断是否在对产生效应的阈值能量以下
+                if column == 'Nuclear (cm2/g)':
+                    threshold = 1.022  # MeV, 对产生阈值
+                elif column == 'Electron (cm2/g)':
+                    threshold = 2.044  # MeV, 双对产生阈值
+                
+                # 在阈值以下的能量位置设置为NaN
+                below_threshold = clipped_energies < threshold
+                results[below_threshold] = np.nan
+            
+            # 替换任何非有限值为较小的值
+            results[~np.isfinite(results)] = 1e-10
+            
             return results.reshape(original_shape)
         except Exception as e:
             warnings.warn(f"计算 {self.symbol} {column} 时出错: {e}")
