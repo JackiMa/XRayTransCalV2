@@ -3,11 +3,13 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    software-properties-common \
-    && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
+        build-essential \
+        curl \
+        software-properties-common \
+        && apt-get clean
+
 
 # 复制项目文件
 COPY . .
