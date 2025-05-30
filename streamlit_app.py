@@ -215,15 +215,39 @@ def get_image_pdf(fig):
 
 def create_download_buttons(fig, base_filename, plot_data=None):
     """创建图片和数据下载按钮"""
+    import time
+    timestamp = str(int(time.time() * 1000))  # 使用时间戳确保唯一性
+    
     if fig is not None:
-        # PDF图片下载按钮
-        pdf_data = get_image_pdf(fig)
-        st.download_button(
-            label="📄 下载图片 (PDF)",
-            data=pdf_data,
-            file_name=f"{base_filename}.pdf",
-            mime="application/pdf"
-        )
+        # 尝试生成PDF，如果失败则生成PNG作为备选
+        try:
+            pdf_data = get_image_pdf(fig)
+            st.download_button(
+                label="📄 下载图片 (PDF)",
+                data=pdf_data,
+                file_name=f"{base_filename}.pdf",
+                mime="application/pdf",
+                key=f"pdf_{base_filename}_{timestamp}"
+            )
+        except Exception as e:
+            # 如果PDF生成失败，提供PNG下载
+            st.warning(f"PDF生成失败，提供PNG格式下载: {str(e)}")
+            try:
+                # 生成PNG作为备选
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
+                buf.seek(0)
+                png_data = buf.getvalue()
+                
+                st.download_button(
+                    label="📷 下载图片 (PNG)",
+                    data=png_data,
+                    file_name=f"{base_filename}.png",
+                    mime="image/png",
+                    key=f"png_{base_filename}_{timestamp}"
+                )
+            except Exception as png_error:
+                st.error(f"图片生成失败: {str(png_error)}")
     
     if plot_data:
         # 数据下载按钮
@@ -255,7 +279,8 @@ def create_download_buttons(fig, base_filename, plot_data=None):
             label="📊 下载数据 (Excel)",
             data=output,
             file_name=f"{base_filename}_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"excel_{base_filename}_{timestamp}"
         )
 
 # Main application interface
@@ -359,9 +384,7 @@ def main():
                     horizontal=True,
                     key="element_x_scale_input"
                 )
-                if x_scale != st.session_state.element_x_scale:
-                    st.session_state.element_x_scale = x_scale
-                    st.session_state.element_auto_redraw = True
+                st.session_state.element_x_scale = x_scale
             
             with col2_scale:
                 y_scale = st.radio(
@@ -371,9 +394,7 @@ def main():
                     horizontal=True,
                     key="element_y_scale_input"
                 )
-                if y_scale != st.session_state.element_y_scale:
-                    st.session_state.element_y_scale = y_scale
-                    st.session_state.element_auto_redraw = True
+                st.session_state.element_y_scale = y_scale
             
             # 添加Y轴范围设置
             col1_yrange, col2_yrange = st.columns(2)
@@ -417,162 +438,167 @@ def main():
                     st.session_state.element_y_max = y_max
             
             calculate_button = st.button("Calculate", key="calculate_element")
-            
-            # 自动重绘的状态检查
-            auto_redraw = False
-            if 'element_auto_redraw' in st.session_state and st.session_state.element_auto_redraw:
-                auto_redraw = True
-                st.session_state.element_auto_redraw = False
         
         with col2:
-            if calculate_button or auto_redraw:
-                try:
-                    element = st.session_state.elements.elements[st.session_state.element_symbol]
-                    
-                    # 转换坐标轴类型为小写
-                    x_scale_value = st.session_state.element_x_scale.lower()
-                    y_scale_value = st.session_state.element_y_scale.lower()
-                    
-                    # 获取Y轴范围设置
-                    y_min_val = st.session_state.element_y_min if st.session_state.element_y_min_enabled else None
-                    y_max_val = st.session_state.element_y_max if st.session_state.element_y_max_enabled else None
-                    
-                    # 存储绘图数据以便下载
-                    plot_data = {}
-                    
-                    if st.session_state.element_plot_type == "Cross Section":
-                        # 绘制元素截面系数图
-                        fig = plot_element_cross_sections(
-                            element, 
-                            e_min=st.session_state.element_energy_min, 
-                            e_max=st.session_state.element_energy_max, 
-                            points=st.session_state.element_num_points,
-                            x_scale=x_scale_value,
-                            y_scale=y_scale_value,
-                            return_fig=True
-                        )
-                        if fig:
-                            # 应用自定义Y轴范围
-                            if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
+            # 检查是否需要重新计算
+            needs_calculation = (
+                calculate_button
+            )
+            
+            # 生成结果的唯一标识
+            result_key = f'element_result_{st.session_state.element_symbol}_{st.session_state.element_plot_type}_{st.session_state.element_energy_min}_{st.session_state.element_energy_max}_{st.session_state.element_num_points}_{st.session_state.element_thickness}_{st.session_state.element_density}'
+            
+            if needs_calculation:
+                with st.spinner('正在计算中，请稍候...'):
+                    try:
+                        element = st.session_state.elements.elements[st.session_state.element_symbol]
+                        
+                        # 转换坐标轴类型为小写
+                        x_scale_value = st.session_state.element_x_scale.lower()
+                        y_scale_value = st.session_state.element_y_scale.lower()
+                        
+                        # 获取Y轴范围设置
+                        y_min_val = st.session_state.element_y_min if st.session_state.element_y_min_enabled else None
+                        y_max_val = st.session_state.element_y_max if st.session_state.element_y_max_enabled else None
+                        
+                        # 存储绘图数据以便下载
+                        plot_data = {}
+                        
+                        if st.session_state.element_plot_type == "Cross Section":
+                            # 绘制元素截面系数图
+                            fig = plot_element_cross_sections(
+                                element, 
+                                e_min=st.session_state.element_energy_min, 
+                                e_max=st.session_state.element_energy_max, 
+                                points=st.session_state.element_num_points,
+                                x_scale=x_scale_value,
+                                y_scale=y_scale_value,
+                                return_fig=True
+                            )
+                            if fig:
+                                # 应用自定义Y轴范围
+                                if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
+                                    for ax in fig.get_axes():
+                                        current_ylim = ax.get_ylim()
+                                        new_ymin = y_min_val if st.session_state.element_y_min_enabled else current_ylim[0]
+                                        new_ymax = y_max_val if st.session_state.element_y_max_enabled else current_ylim[1]
+                                        ax.set_ylim(new_ymin, new_ymax)
+                                
+                                # 准备下载数据
+                                energy_range = np.linspace(st.session_state.element_energy_min, st.session_state.element_energy_max, st.session_state.element_num_points)
+                                
                                 for ax in fig.get_axes():
-                                    current_ylim = ax.get_ylim()
-                                    new_ymin = y_min_val if st.session_state.element_y_min_enabled else current_ylim[0]
-                                    new_ymax = y_max_val if st.session_state.element_y_max_enabled else current_ylim[1]
-                                    ax.set_ylim(new_ymin, new_ymax)
-                                    
-                            st.pyplot(fig)
-                            
-                            # 准备下载数据
-                            df = pd.DataFrame()
+                                    for line in ax.get_lines():
+                                        label = line.get_label()
+                                        if label.startswith('_'): continue  # 跳过辅助线
+                                        y_data = line.get_ydata()
+                                        plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 保存结果到session_state
+                                st.session_state[result_key] = {
+                                    'fig': fig,
+                                    'plot_data': plot_data,
+                                    'plot_type': 'Cross Section'
+                                }
+                            else:
+                                st.error("无法生成图表，请检查参数设置。")
+                        else:
+                            # 计算透射率
                             energy_range = np.linspace(st.session_state.element_energy_min, st.session_state.element_energy_max, st.session_state.element_num_points)
-                            df['Energy (MeV)'] = energy_range
-                            
-                            for ax in fig.get_axes():
-                                for line in ax.get_lines():
-                                    label = line.get_label()
-                                    if label.startswith('_'): continue  # 跳过辅助线
-                                    y_data = line.get_ydata()
-                                    df[label] = y_data
-                                    plot_data[label] = {'x': energy_range, 'y': y_data}
-                            
-                            # 添加下载按钮
-                            create_download_buttons(
-                                fig, 
-                                f"{st.session_state.element_symbol}_cross_sections", 
-                                plot_data
+                            transmission = element.calculate_transmission(
+                                energy_range, 
+                                thickness=st.session_state.element_thickness,
+                                density=st.session_state.element_density
                             )
                             
-                            plt.close(fig)
+                            # 保存传输率数据用于下载
+                            plot_data["Transmission"] = {'x': energy_range, 'y': transmission}
                             
-                            # 同时绘制效应贡献图
-                            st.subheader("Element Interaction Effects")
-                            col_effects1, col_effects2 = st.columns(2)
-                            with col_effects1:
-                                st.write("主要物理效应包括：光电效应、相干/非相干散射和对产生")
-                            with col_effects2:
-                                st.write("data from https://physics.nist.gov/PhysRefData/Xcom/html/xcom1.html")
-                        else:
-                            st.error("无法生成图表，请检查参数设置。")
-                    else:
-                        # 计算透射率
-                        energy_range = np.linspace(st.session_state.element_energy_min, st.session_state.element_energy_max, st.session_state.element_num_points)
-                        transmission = element.calculate_transmission(
-                            energy_range, 
-                            thickness=st.session_state.element_thickness,
-                            density=st.session_state.element_density
-                        )
-                        
-                        # 保存传输率数据用于下载
-                        plot_data["Transmission"] = {'x': energy_range, 'y': transmission}
-                        
-                        # 创建透射率图
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        ax.plot(energy_range, transmission, 'b-', linewidth=2)
-                        ax.set_xlabel('Photon Energy (MeV)')
-                        ax.set_ylabel('Transmission')
-                        ax.set_title(f'{st.session_state.element_symbol} - Thickness: {st.session_state.element_thickness} cm, Density: {st.session_state.element_density} g/cm³')
-                        ax.grid(True, alpha=0.3)
-                        ax.set_xlim(st.session_state.element_energy_min, st.session_state.element_energy_max)
-                        
-                        # 应用自定义Y轴范围或默认范围
-                        if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
-                            default_ymin = 0.001 if y_scale_value == 'log' else 0.0
-                            default_ymax = 1.05
-                            new_ymin = y_min_val if st.session_state.element_y_min_enabled else default_ymin
-                            new_ymax = y_max_val if st.session_state.element_y_max_enabled else default_ymax
-                            ax.set_ylim(new_ymin, new_ymax)
-                        else:
-                            ax.set_ylim(0, 1.05)
-                        
-                        # 设置坐标轴类型
-                        ax.set_xscale(x_scale_value)
-                        if y_scale_value == 'log':
-                            # 对于透射图，对数坐标下需要处理0值
-                            ax.set_yscale(y_scale_value)
-                            if not st.session_state.element_y_min_enabled:
-                                ax.set_ylim(0.001, 1.05)  # 对数坐标下调整下限，除非用户自定义
-                        
-                        st.pyplot(fig)
-                        
-                        # 保存透射率图数据并添加下载按钮
-                        transmission_plot_data = {}
-                        for ax in fig.get_axes():
-                            for line in ax.get_lines():
-                                label = line.get_label()
-                                if label.startswith('_'): continue  # 跳过辅助线
-                                if not label or label == '_line0': label = 'Transmission'
-                                x_data = line.get_xdata()
-                                y_data = line.get_ydata()
-                                plot_data[label] = {'x': x_data, 'y': y_data}
-                                transmission_plot_data[label] = {'x': x_data, 'y': y_data}
-                        
-                        # 添加下载按钮
-                        create_download_buttons(
-                            fig, 
-                            f"{st.session_state.element_symbol}_transmission", 
-                            transmission_plot_data
-                        )
-                        
-                        plt.close(fig)
-                        st.caption("透射率图")
-                        
-                        # 显示关键能量点的透射率
-                        st.subheader("Key Point Transmission")
-                        key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000  # 转换为MeV
-                        key_energies = np.array([e for e in key_energies if st.session_state.element_energy_min <= e <= st.session_state.element_energy_max])
-                        
-                        if len(key_energies) > 0:
-                            key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
-                            key_transmissions = [transmission[i] for i in key_indices]
+                            # 创建透射率图
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            ax.plot(energy_range, transmission, 'b-', linewidth=2)
+                            ax.set_xlabel('Photon Energy (MeV)')
+                            ax.set_ylabel('Transmission')
+                            ax.set_title(f'{st.session_state.element_symbol} - Thickness: {st.session_state.element_thickness} cm, Density: {st.session_state.element_density} g/cm³')
+                            ax.grid(True, alpha=0.3)
+                            ax.set_xlim(st.session_state.element_energy_min, st.session_state.element_energy_max)
                             
-                            data = {
-                                "Energy (MeV)": key_energies,
-                                "Transmission": [f"{t:.4f}" for t in key_transmissions]
+                            # 应用自定义Y轴范围或默认范围
+                            if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
+                                default_ymin = 0.001 if y_scale_value == 'log' else 0.0
+                                default_ymax = 1.05
+                                new_ymin = y_min_val if st.session_state.element_y_min_enabled else default_ymin
+                                new_ymax = y_max_val if st.session_state.element_y_max_enabled else default_ymax
+                                ax.set_ylim(new_ymin, new_ymax)
+                            else:
+                                ax.set_ylim(0, 1.05)
+                            
+                            # 设置坐标轴类型
+                            ax.set_xscale(x_scale_value)
+                            if y_scale_value == 'log':
+                                # 对于透射图，对数坐标下需要处理0值
+                                ax.set_yscale(y_scale_value)
+                                if not st.session_state.element_y_min_enabled:
+                                    ax.set_ylim(0.001, 1.05)  # 对数坐标下调整下限，除非用户自定义
+                            
+                            # 计算关键能量点的透射率
+                            key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000  # 转换为MeV
+                            key_energies = np.array([e for e in key_energies if st.session_state.element_energy_min <= e <= st.session_state.element_energy_max])
+                            
+                            key_transmissions = []
+                            transmission_plot_data = {}
+                            if len(key_energies) > 0:
+                                key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
+                                key_transmissions = [transmission[i] for i in key_indices]
+                                for i in key_indices:
+                                    transmission_plot_data[f'Key Point {i+1}'] = {'x': energy_range[i], 'y': transmission[i]}
+                            
+                            # 保存结果到session_state
+                            st.session_state[result_key] = {
+                                'fig': fig,
+                                'plot_data': plot_data,
+                                'plot_type': 'Transmission',
+                                'key_energies': key_energies,
+                                'key_transmissions': key_transmissions,
+                                'transmission_plot_data': transmission_plot_data
                             }
-                            st.table(data)
                     
-                except Exception as e:
-                    st.error(f"Calculation error: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Calculation error: {str(e)}")
+                        return
+            
+            # 显示保存的结果
+            if result_key in st.session_state:
+                result = st.session_state[result_key]
+                fig = result['fig']
+                plot_data = result['plot_data']
+                
+                st.pyplot(fig)
+                
+                # 添加下载按钮
+                create_download_buttons(
+                    fig, 
+                    f"{st.session_state.element_symbol}_{result['plot_type'].replace(' ', '_').lower()}", 
+                    plot_data
+                )
+                
+                if result['plot_type'] == 'Cross Section':
+                    # 同时绘制效应贡献图
+                    st.subheader("Element Interaction Effects")
+                    col_effects1, col_effects2 = st.columns(2)
+                    with col_effects1:
+                        st.write("主要物理效应包括：光电效应、相干/非相干散射和对产生")
+                    with col_effects2:
+                        st.write("data from https://physics.nist.gov/PhysRefData/Xcom/html/xcom1.html")
+                else:
+                    # 显示关键能量点的透射率
+                    if len(result['key_energies']) > 0:
+                        st.subheader("Key Point Transmission")
+                        data = {
+                            "Energy (MeV)": result['key_energies'],
+                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
+                        }
+                        st.table(data)
     
     # Compounds tab
     with tabs[1]:
@@ -656,9 +682,7 @@ def main():
                     horizontal=True,
                     key="compound_x_scale_input"
                 )
-                if compound_x_scale != st.session_state.compound_x_scale:
-                    st.session_state.compound_x_scale = compound_x_scale
-                    st.session_state.compound_auto_redraw = True
+                st.session_state.compound_x_scale = compound_x_scale
             
             with col2_scale:
                 compound_y_scale = st.radio(
@@ -668,9 +692,7 @@ def main():
                     horizontal=True,
                     key="compound_y_scale_input"
                 )
-                if compound_y_scale != st.session_state.compound_y_scale:
-                    st.session_state.compound_y_scale = compound_y_scale
-                    st.session_state.compound_auto_redraw = True
+                st.session_state.compound_y_scale = compound_y_scale
             
             # 添加Y轴范围设置
             col1_yrange, col2_yrange = st.columns(2)
@@ -712,319 +734,233 @@ def main():
                     st.session_state.compound_y_max = compound_y_max
             
             calculate_compound_button = st.button("Calculate", key="calculate_compound")
-            
-            # 自动重绘的状态检查
-            compound_auto_redraw = False
-            if 'compound_auto_redraw' in st.session_state and st.session_state.compound_auto_redraw:
-                compound_auto_redraw = True
-                st.session_state.compound_auto_redraw = False
         
         with col2:
-            if calculate_compound_button or compound_auto_redraw:
-                try:
-                    # 解析化学式
-                    formula_elements = st.session_state.elements.parse_chemical_formula(compound_formula)
-                    
-                    # 获取质量分数
-                    mass_fractions = st.session_state.elements.calculate_mass_fractions(compound_formula)
-                    
-                    # 转换坐标轴类型为小写
-                    x_scale_value = compound_x_scale.lower()
-                    y_scale_value = compound_y_scale.lower()
-                    
-                    if not formula_elements:
-                        st.error("Cannot parse chemical formula, please check input format.")
-                    else:
-                        if compound_plot_type == "Component Contribution":
-                            # 使用plot_compound_all绘制多个图表
-                            st.subheader("化合物成分与透射分析")
-                            st.info("正在生成多个图表，包括成分贡献、物理效应和透射率...")
-                            
-                            col_figs1, col_figs2 = st.columns(2)
-                            
-                            # 创建一个字典存储所有图表的数据
-                            plot_data_all = {}
-                            
-                            with col_figs1:
-                                # 成分贡献图
-                                fig = plot_compound_components(
-                                    st.session_state.elements,
-                                    compound_formula,
-                                    e_min=compound_energy_min, 
-                                    e_max=compound_energy_max, 
-                                    y_min=compound_y_min,
-                                    y_max=compound_y_max,
-                                    points=compound_num_points,
-                                    x_scale=x_scale_value,
-                                    y_scale=y_scale_value,
-                                    return_fig=True
-                                )
-                                if fig:
-                                    st.pyplot(fig)
-                                    
-                                    # 保存成分贡献图数据并添加下载按钮
-                                    component_plot_data = {}
-                                    energy_range = np.linspace(compound_energy_min, compound_energy_max, compound_num_points)
-                                    for ax in fig.get_axes():
-                                        for line in ax.get_lines():
-                                            label = line.get_label()
-                                            if label.startswith('_'): continue  # 跳过辅助线
-                                            x_data = line.get_xdata()
-                                            y_data = line.get_ydata()
-                                            plot_data_all[f"Component_{label}"] = {'x': x_data, 'y': y_data}
-                                            component_plot_data[label] = {'x': x_data, 'y': y_data}
-                                    
-                                    # 添加下载按钮
-                                    create_download_buttons(
-                                        fig, 
-                                        f"{compound_formula.replace(' ', '')}_components", 
-                                        component_plot_data
-                                    )
-                                    
-                                    plt.close(fig)
-                                    st.caption("元素成分贡献图")
-                                else:
-                                    st.error("无法生成成分贡献图")
-                            
-                            with col_figs2:
-                                # 物理效应图
-                                fig = plot_compound_effect_contributions(
-                                    st.session_state.elements,
-                                    compound_formula,
-                                    e_min=compound_energy_min, 
-                                    e_max=compound_energy_max, 
-                                    y_min=compound_y_min,
-                                    y_max=compound_y_max,
-                                    points=compound_num_points,
-                                    x_scale=x_scale_value,
-                                    y_scale=y_scale_value,
-                                    return_fig=True
-                                )
-                                if fig:
-                                    st.pyplot(fig)
-                                    
-                                    # 保存物理效应图数据并添加下载按钮
-                                    effect_plot_data = {}
-                                    for ax in fig.get_axes():
-                                        for line in ax.get_lines():
-                                            label = line.get_label()
-                                            if label.startswith('_'): continue  # 跳过辅助线
-                                            x_data = line.get_xdata()
-                                            y_data = line.get_ydata()
-                                            plot_data_all[f"Effect_{label}"] = {'x': x_data, 'y': y_data}
-                                            effect_plot_data[label] = {'x': x_data, 'y': y_data}
-                                    
-                                    # 添加下载按钮
-                                    create_download_buttons(
-                                        fig, 
-                                        f"{compound_formula.replace(' ', '')}_effects", 
-                                        effect_plot_data
-                                    )
-                                    
-                                    plt.close(fig)
-                                    st.caption("物理效应贡献图")
-                                else:
-                                    st.error("无法生成物理效应图")
-                            
-                            # 透射率图
-                            st.subheader("化合物透射率")
-                            fig = plot_compound_transmission(
-                                st.session_state.elements,
-                                compound_formula,
-                                e_min=compound_energy_min, 
-                                e_max=compound_energy_max, 
-                                density=compound_density,
-                                thickness=compound_thickness,
-                                y_min=compound_y_min,
-                                y_max=compound_y_max,
-                                points=compound_num_points,
-                                x_scale=x_scale_value,
-                                y_scale='linear',
-                                return_fig=True
-                            )
-                            if fig:
-                                st.pyplot(fig)
-                                
-                                # 保存透射率图数据并添加下载按钮
-                                transmission_plot_data = {}
-                                for ax in fig.get_axes():
-                                    for line in ax.get_lines():
-                                        label = line.get_label()
-                                        if label.startswith('_'): continue  # 跳过辅助线
-                                        if not label or label == '_line0': label = 'Transmission'
-                                        x_data = line.get_xdata()
-                                        y_data = line.get_ydata()
-                                        plot_data_all[label] = {'x': x_data, 'y': y_data}
-                                        transmission_plot_data[label] = {'x': x_data, 'y': y_data}
-                                
-                                # 添加下载按钮
-                                create_download_buttons(
-                                    fig, 
-                                    f"{compound_formula.replace(' ', '')}_transmission", 
-                                    transmission_plot_data
-                                )
-                                
-                                plt.close(fig)
-                                st.caption("透射率图")
-                            else:
-                                st.error("无法生成透射率图")
-                                
-                            # 添加数据下载按钮 - 所有图表数据合并到一个Excel文件
-                            if plot_data_all:
-                                output = io.BytesIO()
-                                writer = pd.ExcelWriter(output, engine='xlsxwriter')
-                                
-                                # 创建三个主工作表
-                                component_df = pd.DataFrame()
-                                effect_df = pd.DataFrame()
-                                transmission_df = pd.DataFrame()
-                                
-                                # 处理能量范围
-                                energy_range = np.linspace(compound_energy_min, compound_energy_max, compound_num_points)
-                                
-                                # 分配数据到相应工作表
-                                for label, data in plot_data_all.items():
-                                    if label.startswith("Component_"):
-                                        if 'Energy (MeV)' not in component_df:
-                                            component_df['Energy (MeV)'] = data['x']
-                                        component_df[label.replace("Component_", "")] = data['y']
-                                    elif label.startswith("Effect_"):
-                                        if 'Energy (MeV)' not in effect_df:
-                                            effect_df['Energy (MeV)'] = data['x']
-                                        effect_df[label.replace("Effect_", "")] = data['y']
-                                    else:
-                                        if 'Energy (MeV)' not in transmission_df:
-                                            transmission_df['Energy (MeV)'] = data['x']
-                                        transmission_df[label] = data['y']
-                                
-                                # 写入工作表
-                                if not component_df.empty:
-                                    component_df.to_excel(writer, sheet_name='Components')
-                                if not effect_df.empty:
-                                    effect_df.to_excel(writer, sheet_name='Effects')
-                                if not transmission_df.empty:
-                                    transmission_df.to_excel(writer, sheet_name='Transmission')
-                                
-                                # 创建混合物信息工作表
-                                element_symbols = [elem[0] for elem in formula_elements]
-                                element_counts = [elem[1] for elem in formula_elements]
-                                mixture_info_df = pd.DataFrame({
-                                    'Element': element_symbols,
-                                    'Count': element_counts,
-                                    'Mass Fraction': [mass_fractions.get(elem, 0) for elem in element_symbols],
-                                    'Density (g/cm³)': compound_density
-                                })
-                                mixture_info_df.to_excel(writer, sheet_name='Compound Info')
-                                
-                                writer.close()
-                                output.seek(0)
-                                
-                                # 生成混合物名称用于文件命名
-                                mixture_name = compound_formula.replace(" ", "")
-                                
-                                st.download_button(
-                                    label="下载所有图表数据",
-                                    data=output,
-                                    file_name=f"{mixture_name}_all_data.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                )
+            # 检查是否需要重新计算
+            needs_calculation = (
+                calculate_compound_button
+            )
+            
+            # 生成结果的唯一标识
+            result_key = f'compound_result_{st.session_state.compound_formula}_{st.session_state.compound_plot_type}_{st.session_state.compound_energy_min}_{st.session_state.compound_energy_max}_{st.session_state.compound_num_points}_{st.session_state.compound_thickness}_{st.session_state.compound_density}'
+            
+            if needs_calculation:
+                with st.spinner('正在计算化合物数据，请稍候...'):
+                    try:
+                        # 解析化学式
+                        formula_elements = st.session_state.elements.parse_chemical_formula(st.session_state.compound_formula)
+                        
+                        # 获取质量分数
+                        mass_fractions = st.session_state.elements.calculate_mass_fractions(st.session_state.compound_formula)
+                        
+                        # 转换坐标轴类型为小写
+                        x_scale_value = st.session_state.compound_x_scale.lower()
+                        y_scale_value = st.session_state.compound_y_scale.lower()
+                        
+                        if not formula_elements:
+                            st.error("Cannot parse chemical formula, please check input format.")
                         else:
-                            # 仅显示透射率图
-                            fig = plot_compound_transmission(
-                                st.session_state.elements,
-                                compound_formula,
-                                e_min=compound_energy_min, 
-                                e_max=compound_energy_max, 
-                                density=compound_density,
-                                thickness=compound_thickness,
-                                points=compound_num_points,
-                                x_scale=x_scale_value,
-                                y_scale='linear' if y_scale_value == 'linear' else 'log',
-                                return_fig=True
-                            )
-                            
-                            if fig:
-                                st.pyplot(fig)
-                                plt.close(fig)
-                                st.caption("透射率图")
-                            else:
-                                st.error("无法生成图表，请检查参数设置。")
-                            
-                            # 显示关键能量点的透射率
-                            st.subheader("Key Point Transmission")
-                            key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000  # 转换为MeV
-                            key_energies = np.array([e for e in key_energies if compound_energy_min <= e <= compound_energy_max])
-                            
-                            if len(key_energies) > 0:
-                                # 计算能量范围
-                                energy_range = np.linspace(compound_energy_min, compound_energy_max, compound_num_points)
+                            if st.session_state.compound_plot_type == "Component Contribution":
+                                # 准备混合物定义
+                                plot_data_all = {}
                                 
-                                # 计算总截面 - 使用正确的API
-                                result = st.session_state.elements.calculate_compound_cross_section(
-                                    compound_formula, energy_range
+                                # 成分贡献图
+                                fig_components = plot_compound_components(
+                                    st.session_state.elements,
+                                    st.session_state.compound_formula,
+                                    e_min=st.session_state.compound_energy_min, 
+                                    e_max=st.session_state.compound_energy_max, 
+                                    points=st.session_state.compound_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale=y_scale_value,
+                                    return_fig=True
                                 )
                                 
-                                if result is not None:
-                                    # 正确解包三元组返回值，只使用第一个元素(总截面)
-                                    total_cross_section, _, _ = result
-                                    
-                                    # 计算透射率
-                                    transmission = np.exp(-total_cross_section * compound_density * compound_thickness)
-                                    
-                                    key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
-                                    key_transmissions = [transmission[i] for i in key_indices]
-                                    
-                                    data = {
-                                        "Energy (MeV)": key_energies,
-                                        "Transmission": [f"{t:.4f}" for t in key_transmissions]
-                                    }
-                                    st.table(data)
-                                    
-                                    # 添加数据下载按钮
-                                    output = io.BytesIO()
-                                    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-                                    
-                                    # 生成化合物名称用于文件命名
-                                    compound_name = compound_formula.replace(" ", "")
-                                    
-                                    # 保存透射率数据
-                                    transmission_df = pd.DataFrame({
-                                        'Energy (MeV)': energy_range,
-                                        'Transmission': transmission
-                                    })
-                                    transmission_df.to_excel(writer, sheet_name='Transmission')
-                                    
-                                    # 保存关键点数据
-                                    key_points_df = pd.DataFrame({
-                                        'Energy (MeV)': key_energies,
-                                        'Transmission': [t for t in key_transmissions]
-                                    })
-                                    key_points_df.to_excel(writer, sheet_name='Key Points')
-                                    
-                                    # 保存化合物信息
-                                    element_symbols = [elem[0] for elem in formula_elements]
-                                    element_counts = [elem[1] for elem in formula_elements]
-                                    compound_info_df = pd.DataFrame({
-                                        'Element': element_symbols,
-                                        'Count': element_counts,
-                                        'Mass Fraction': [mass_fractions.get(elem, 0) for elem in element_symbols],
-                                        'Density (g/cm³)': compound_density
-                                    })
-                                    compound_info_df.to_excel(writer, sheet_name='Compound Info')
-                                    
-                                    writer.close()
-                                    output.seek(0)
-                                    
-                                    st.download_button(
-                                        label="下载透射率数据",
-                                        data=output,
-                                        file_name=f"{compound_name}_transmission.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                # 提取成分贡献图数据
+                                components_plot_data = {}
+                                if fig_components:
+                                    energy_range = np.linspace(st.session_state.compound_energy_min, st.session_state.compound_energy_max, st.session_state.compound_num_points)
+                                    for ax in fig_components.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            y_data = line.get_ydata()
+                                            components_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 物理效应图
+                                fig_effects = plot_compound_effect_contributions(
+                                    st.session_state.elements,
+                                    st.session_state.compound_formula,
+                                    e_min=st.session_state.compound_energy_min, 
+                                    e_max=st.session_state.compound_energy_max, 
+                                    points=st.session_state.compound_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale=y_scale_value,
+                                    return_fig=True
+                                )
+                                
+                                # 提取物理效应图数据
+                                effects_plot_data = {}
+                                if fig_effects:
+                                    energy_range = np.linspace(st.session_state.compound_energy_min, st.session_state.compound_energy_max, st.session_state.compound_num_points)
+                                    for ax in fig_effects.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            y_data = line.get_ydata()
+                                            effects_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 透射率图
+                                fig_transmission = plot_compound_transmission(
+                                    st.session_state.elements,
+                                    st.session_state.compound_formula,
+                                    e_min=st.session_state.compound_energy_min, 
+                                    e_max=st.session_state.compound_energy_max, 
+                                    density=st.session_state.compound_density,
+                                    thickness=st.session_state.compound_thickness,
+                                    points=st.session_state.compound_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale='linear',
+                                    return_fig=True
+                                )
+                                
+                                # 提取透射率图数据
+                                transmission_plot_data = {}
+                                if fig_transmission:
+                                    energy_range = np.linspace(st.session_state.compound_energy_min, st.session_state.compound_energy_max, st.session_state.compound_num_points)
+                                    for ax in fig_transmission.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            if not label or label == '_line0': label = 'Transmission'
+                                            y_data = line.get_ydata()
+                                            transmission_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 保存结果到session_state
+                                st.session_state[result_key] = {
+                                    'fig_components': fig_components,
+                                    'fig_effects': fig_effects,
+                                    'fig_transmission': fig_transmission,
+                                    'components_plot_data': components_plot_data,
+                                    'effects_plot_data': effects_plot_data,
+                                    'transmission_plot_data': transmission_plot_data,
+                                    'plot_type': 'Component Contribution',
+                                    'formula_elements': formula_elements,
+                                    'mass_fractions': mass_fractions
+                                }
+                            else:
+                                # 仅显示透射率图
+                                fig = plot_compound_transmission(
+                                    st.session_state.elements,
+                                    st.session_state.compound_formula,
+                                    e_min=st.session_state.compound_energy_min, 
+                                    e_max=st.session_state.compound_energy_max, 
+                                    density=st.session_state.compound_density,
+                                    thickness=st.session_state.compound_thickness,
+                                    points=st.session_state.compound_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale='linear' if y_scale_value == 'linear' else 'log',
+                                    return_fig=True
+                                )
+                                
+                                # 计算关键能量点的透射率
+                                key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000
+                                key_energies = np.array([e for e in key_energies if st.session_state.compound_energy_min <= e <= st.session_state.compound_energy_max])
+                                
+                                key_transmissions = []
+                                transmission_plot_data = {}
+                                if len(key_energies) > 0:
+                                    energy_range = np.linspace(st.session_state.compound_energy_min, st.session_state.compound_energy_max, st.session_state.compound_num_points)
+                                    result = st.session_state.elements.calculate_compound_cross_section(
+                                        st.session_state.compound_formula, energy_range
                                     )
-                                else:
-                                    st.error("无法计算该化合物的截面系数，请检查化学式。")
-                except Exception as e:
-                    st.error(f"Calculation error: {str(e)}")
+                                    if result is not None:
+                                        total_cross_section, _, _ = result
+                                        transmission = np.exp(-total_cross_section * st.session_state.compound_density * st.session_state.compound_thickness)
+                                        key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
+                                        key_transmissions = [transmission[i] for i in key_indices]
+                                        # 保存透射率数据
+                                        transmission_plot_data['Transmission'] = {'x': energy_range, 'y': transmission}
+                                
+                                # 保存结果到session_state
+                                st.session_state[result_key] = {
+                                    'fig': fig,
+                                    'plot_type': 'Transmission',
+                                    'formula_elements': formula_elements,
+                                    'mass_fractions': mass_fractions,
+                                    'key_energies': key_energies,
+                                    'key_transmissions': key_transmissions,
+                                    'transmission_plot_data': transmission_plot_data
+                                }
+                    
+                    except Exception as e:
+                        st.error(f"Calculation error: {str(e)}")
+                        return
+            
+            # 显示保存的结果
+            if result_key in st.session_state:
+                result = st.session_state[result_key]
+                
+                if result['plot_type'] == "Component Contribution":
+                    # 使用plot_compound_all绘制多个图表
+                    st.subheader("化合物成分与透射分析")
+                    st.info("正在显示缓存的图表...")
+                    
+                    col_figs1, col_figs2 = st.columns(2)
+                    
+                    with col_figs1:
+                        # 成分贡献图
+                        if result['fig_components']:
+                            st.pyplot(result['fig_components'])
+                            compound_name = st.session_state.compound_formula.replace(" ", "")
+                            create_download_buttons(
+                                result['fig_components'], 
+                                f"{compound_name}_components",
+                                result['components_plot_data']
+                            )
+                            st.caption("混合物成分贡献图")
+                    
+                    with col_figs2:
+                        # 物理效应图
+                        if result['fig_effects']:
+                            st.pyplot(result['fig_effects'])
+                            create_download_buttons(
+                                result['fig_effects'], 
+                                f"{compound_name}_effects",
+                                result['effects_plot_data']
+                            )
+                            st.caption("物理效应贡献图")
+                    
+                    # 透射率图
+                    st.subheader("混合物透射率")
+                    if result['fig_transmission']:
+                        st.pyplot(result['fig_transmission'])
+                        create_download_buttons(
+                            result['fig_transmission'], 
+                            f"{compound_name}_transmission",
+                            result['transmission_plot_data']
+                        )
+                        st.caption("透射率图")
+                else:
+                    # 仅显示透射率图
+                    if result['fig']:
+                        st.pyplot(result['fig'])
+                        compound_name = st.session_state.compound_formula.replace(" ", "")
+                        create_download_buttons(
+                            result['fig'], 
+                            f"{compound_name}_transmission",
+                            result['transmission_plot_data']
+                        )
+                        st.caption("透射率图")
+                    
+                    # 显示关键能量点的透射率
+                    if len(result['key_energies']) > 0:
+                        st.subheader("Key Point Transmission")
+                        data = {
+                            "Energy (MeV)": result['key_energies'],
+                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
+                        }
+                        st.table(data)
     
     # Mixtures tab
     with tabs[2]:
@@ -1154,9 +1090,7 @@ def main():
                     horizontal=True,
                     key="mixture_x_scale_input"
                 )
-                if mixture_x_scale != st.session_state.mixture_x_scale:
-                    st.session_state.mixture_x_scale = mixture_x_scale
-                    st.session_state.mixture_auto_redraw = True
+                st.session_state.mixture_x_scale = mixture_x_scale
             
             with col2_scale:
                 mixture_y_scale = st.radio(
@@ -1166,9 +1100,7 @@ def main():
                     horizontal=True,
                     key="mixture_y_scale_input"
                 )
-                if mixture_y_scale != st.session_state.mixture_y_scale:
-                    st.session_state.mixture_y_scale = mixture_y_scale
-                    st.session_state.mixture_auto_redraw = True
+                st.session_state.mixture_y_scale = mixture_y_scale
             
             # 添加Y轴范围设置
             col1_yrange, col2_yrange = st.columns(2)
@@ -1210,337 +1142,272 @@ def main():
                     st.session_state.mixture_y_max = mixture_y_max
             
             calculate_mixture_button = st.button("Calculate", key="calculate_mixture")
-            
-            # 自动重绘的状态检查
-            mixture_auto_redraw = False
-            if 'mixture_auto_redraw' in st.session_state and st.session_state.mixture_auto_redraw:
-                mixture_auto_redraw = True
-                st.session_state.mixture_auto_redraw = False
         
         with col2:
-            if calculate_mixture_button or mixture_auto_redraw:
-                try:
-                    # 检查有效组件
-                    valid_components = [comp for comp in st.session_state.mixture_components 
-                                      if comp["formula"].strip() and comp["weight_percent"] > 0]
-                    
-                    # 转换坐标轴类型为小写
-                    x_scale_value = mixture_x_scale.lower()
-                    y_scale_value = mixture_y_scale.lower()
-                    
-                    if not valid_components:
-                        st.error("Please add at least one valid mixture component.")
-                    else:
-                        # 提取组件信息
-                        formulas = [comp["formula"] for comp in valid_components]
-                        weights = [comp["weight_percent"] for comp in valid_components]
-                        densities = [comp["density"] for comp in valid_components]
+            # 检查是否需要重新计算
+            needs_calculation = (
+                calculate_mixture_button
+            )
+            
+            # 生成结果的唯一标识 - 包含组件信息的hash
+            components_str = str([(comp["formula"], comp["weight_percent"], comp["density"]) for comp in st.session_state.mixture_components])
+            result_key = f'mixture_result_{hash(components_str)}_{st.session_state.mixture_plot_type}_{st.session_state.mixture_energy_min}_{st.session_state.mixture_energy_max}_{st.session_state.mixture_num_points}_{st.session_state.mixture_thickness}'
+            
+            if needs_calculation:
+                with st.spinner('正在计算混合物数据，请稍候...'):
+                    try:
+                        # 检查有效组件
+                        valid_components = [comp for comp in st.session_state.mixture_components 
+                                          if comp["formula"].strip() and comp["weight_percent"] > 0]
                         
-                        # 归一化权重
-                        total_weight = sum(weights)
-                        weights = [w / total_weight * 100 for w in weights]
+                        # 转换坐标轴类型为小写
+                        x_scale_value = st.session_state.mixture_x_scale.lower()
+                        y_scale_value = st.session_state.mixture_y_scale.lower()
                         
-                        # 计算混合物平均密度
-                        mixture_density = sum((w/100) * d for w, d in zip(weights, densities))
-                        
-                        # 显示混合物信息
-                        st.subheader("Mixture Information")
-                        st.write(f"Mixture Average Density: {mixture_density:.4f} g/cm³")
-                        
-                        component_data = []
-                        for formula, weight, density in zip(formulas, weights, densities):
-                            component_data.append({
-                                "Formula": formula,
-                                "Weight Percent": f"{weight:.2f}%",
-                                "Density": f"{density:.4f} g/cm³"
-                            })
-                        st.table(component_data)
-                        
-                        if mixture_plot_type == "Component Contribution":
-                            # 使用plot_mixture_all显示多个图表
-                            st.subheader("混合物成分与透射分析")
-                            st.info("正在生成多个图表，包括成分贡献、物理效应和透射率...")
-                            
-                            col_figs1, col_figs2 = st.columns(2)
-                            
-                            # 准备混合物定义
-                            mixture_definition = [{"formula": f, "proportion": w, "density": d} 
-                                                for f, w, d in zip(formulas, weights, densities)]
-                            
-                            # 创建一个字典存储所有图表的数据
-                            plot_data_all = {}
-                            
-                            with col_figs1:
-                                # 成分贡献图
-                                fig = plot_mixture_components(
-                                    st.session_state.elements,
-                                    mixture_definition,
-                                    e_min=mixture_energy_min, 
-                                    e_max=mixture_energy_max, 
-                                    points=mixture_num_points,
-                                    x_scale=x_scale_value,
-                                    y_scale=y_scale_value,
-                                    return_fig=True
-                                )
-                                if fig:
-                                    st.pyplot(fig)
-                                    
-                                    # 保存成分贡献图数据并添加下载按钮
-                                    component_plot_data = {}
-                                    # 保存成分贡献图数据
-                                    for ax in fig.get_axes():
-                                        for line in ax.get_lines():
-                                            label = line.get_label()
-                                            if label.startswith('_'): continue  # 跳过辅助线
-                                            x_data = line.get_xdata()
-                                            y_data = line.get_ydata()
-                                            plot_data_all[f"Component_{label}"] = {'x': x_data, 'y': y_data}
-                                    
-                                    plt.close(fig)
-                                    st.caption("混合物成分贡献图")
-                                else:
-                                    st.error("无法生成成分贡献图")
-                            
-                            with col_figs2:
-                                # 物理效应图
-                                fig = plot_mixture_effect_contributions(
-                                    st.session_state.elements,
-                                    mixture_definition,
-                                    e_min=mixture_energy_min, 
-                                    e_max=mixture_energy_max, 
-                                    points=mixture_num_points,
-                                    x_scale=x_scale_value,
-                                    y_scale=y_scale_value,
-                                    return_fig=True
-                                )
-                                if fig:
-                                    st.pyplot(fig)
-                                    
-                                    # 保存物理效应图数据并添加下载按钮
-                                    effect_plot_data = {}
-                                    for ax in fig.get_axes():
-                                        for line in ax.get_lines():
-                                            label = line.get_label()
-                                            if label.startswith('_'): continue  # 跳过辅助线
-                                            x_data = line.get_xdata()
-                                            y_data = line.get_ydata()
-                                            plot_data_all[f"Effect_{label}"] = {'x': x_data, 'y': y_data}
-                                            effect_plot_data[label] = {'x': x_data, 'y': y_data}
-                                    
-                                    # 添加下载按钮
-                                    create_download_buttons(
-                                        fig, 
-                                        f"{compound_formula.replace(' ', '')}_effects", 
-                                        effect_plot_data
-                                    )
-                                    
-                                    plt.close(fig)
-                                    st.caption("物理效应贡献图")
-                                else:
-                                    st.error("无法生成物理效应图")
-                            
-                            # 透射率图
-                            st.subheader("混合物透射率")
-                            fig = plot_mixture_transmission(
-                                st.session_state.elements,
-                                mixture_definition,
-                                e_min=mixture_energy_min, 
-                                e_max=mixture_energy_max, 
-                                mixture_thickness=mixture_thickness,
-                                points=mixture_num_points,
-                                x_scale=x_scale_value,
-                                y_scale='linear',
-                                return_fig=True
-                            )
-                            if fig:
-                                st.pyplot(fig)
-                                
-                                # 保存透射率图数据并添加下载按钮
-                                transmission_plot_data = {}
-                                for ax in fig.get_axes():
-                                    for line in ax.get_lines():
-                                        label = line.get_label()
-                                        if label.startswith('_'): continue  # 跳过辅助线
-                                        if not label or label == '_line0': label = 'Transmission'
-                                        x_data = line.get_xdata()
-                                        y_data = line.get_ydata()
-                                        plot_data_all[label] = {'x': x_data, 'y': y_data}
-                                        transmission_plot_data[label] = {'x': x_data, 'y': y_data}
-                                
-                                # 添加下载按钮
-                                create_download_buttons(
-                                    fig, 
-                                    f"{compound_formula.replace(' ', '')}_transmission", 
-                                    transmission_plot_data
-                                )
-                                
-                                plt.close(fig)
-                                st.caption("透射率图")
-                            else:
-                                st.error("无法生成透射率图")
-                                
-                            # 添加数据下载按钮 - 所有图表数据合并到一个Excel文件
-                            if plot_data_all:
-                                output = io.BytesIO()
-                                writer = pd.ExcelWriter(output, engine='xlsxwriter')
-                                
-                                # 创建三个主工作表
-                                component_df = pd.DataFrame()
-                                effect_df = pd.DataFrame()
-                                transmission_df = pd.DataFrame()
-                                
-                                # 处理能量范围
-                                energy_range = np.linspace(mixture_energy_min, mixture_energy_max, mixture_num_points)
-                                
-                                # 分配数据到相应工作表
-                                for label, data in plot_data_all.items():
-                                    if label.startswith("Component_"):
-                                        if 'Energy (MeV)' not in component_df:
-                                            component_df['Energy (MeV)'] = data['x']
-                                        component_df[label.replace("Component_", "")] = data['y']
-                                    elif label.startswith("Effect_"):
-                                        if 'Energy (MeV)' not in effect_df:
-                                            effect_df['Energy (MeV)'] = data['x']
-                                        effect_df[label.replace("Effect_", "")] = data['y']
-                                    else:
-                                        if 'Energy (MeV)' not in transmission_df:
-                                            transmission_df['Energy (MeV)'] = data['x']
-                                        transmission_df[label] = data['y']
-                                
-                                # 写入工作表
-                                if not component_df.empty:
-                                    component_df.to_excel(writer, sheet_name='Components')
-                                if not effect_df.empty:
-                                    effect_df.to_excel(writer, sheet_name='Effects')
-                                if not transmission_df.empty:
-                                    transmission_df.to_excel(writer, sheet_name='Transmission')
-                                
-                                # 创建混合物信息工作表
-                                element_symbols = [elem[0] for elem in mixture_definition]
-                                element_counts = [elem[1] for elem in mixture_definition]
-                                mixture_info_df = pd.DataFrame({
-                                    'Element': element_symbols,
-                                    'Count': element_counts,
-                                    'Mass Fraction': [weights.get(elem, 0) for elem in element_symbols],
-                                    'Density (g/cm³)': densities
-                                })
-                                mixture_info_df.to_excel(writer, sheet_name='Mixture Info')
-                                
-                                writer.close()
-                                output.seek(0)
-                                
-                                # 生成混合物名称用于文件命名
-                                mixture_name = "_".join([f.replace(" ", "") for f in element_symbols[:3]])
-                                if len(element_symbols) > 3:
-                                    mixture_name += "_etc"
-                                
-                                st.download_button(
-                                    label="下载所有图表数据",
-                                    data=output,
-                                    file_name=f"{mixture_name}_all_data.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                )
+                        if not valid_components:
+                            st.error("Please add at least one valid mixture component.")
                         else:
-                            # 仅显示透射率图
-                            mixture_definition = [{"formula": f, "proportion": w, "density": d} 
-                                                for f, w, d in zip(formulas, weights, densities)]
+                            # 提取组件信息
+                            formulas = [comp["formula"] for comp in valid_components]
+                            weights = [comp["weight_percent"] for comp in valid_components]
+                            densities = [comp["density"] for comp in valid_components]
                             
-                            fig = plot_mixture_transmission(
-                                st.session_state.elements,
-                                mixture_definition,
-                                e_min=mixture_energy_min, 
-                                e_max=mixture_energy_max, 
-                                mixture_thickness=mixture_thickness,
-                                points=mixture_num_points,
-                                x_scale=x_scale_value,
-                                y_scale='linear' if y_scale_value == 'linear' else 'log',
-                                return_fig=True
-                            )
-                            if fig:
-                                st.pyplot(fig)
-                                plt.close(fig)
-                                st.caption("透射率图")
-                            else:
-                                st.error("无法生成图表，请检查参数设置。")
+                            # 归一化权重
+                            total_weight = sum(weights)
+                            weights = [w / total_weight * 100 for w in weights]
                             
-                            # 显示关键能量点的透射率
-                            st.subheader("Key Point Transmission")
-                            key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000  # 转换为MeV
-                            key_energies = np.array([e for e in key_energies if mixture_energy_min <= e <= mixture_energy_max])
+                            # 计算混合物平均密度
+                            mixture_density = sum((w/100) * d for w, d in zip(weights, densities))
                             
-                            if len(key_energies) > 0:
-                                # 重新计算传输率
-                                energy_range = np.linspace(mixture_energy_min, mixture_energy_max, mixture_num_points)
+                            if st.session_state.mixture_plot_type == "Component Contribution":
+                                # 准备混合物定义
+                                mixture_definition = [{"formula": f, "proportion": w, "density": d} 
+                                                    for f, w, d in zip(formulas, weights, densities)]
                                 
-                                # 计算总截面
-                                total_cross_section = np.zeros_like(energy_range)
-                                for formula, weight in zip(formulas, weights):
-                                    try:
-                                        cross_section = st.session_state.elements.calculate_compound_cross_section(
-                                            formula, energy_range
-                                        )
-                                        total_cross_section += cross_section * (weight / 100)
-                                    except Exception as e:
-                                        continue
-                                
-                                # 计算传输率
-                                transmission = np.exp(-total_cross_section * mixture_density * mixture_thickness)
-                                
-                                key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
-                                key_transmissions = [transmission[i] for i in key_indices]
-                                
-                                data = {
-                                    "Energy (MeV)": key_energies,
-                                    "Transmission": [f"{t:.4f}" for t in key_transmissions]
-                                }
-                                st.table(data)
-                                
-                                # 添加数据下载按钮 - 优化版本
-                                output = io.BytesIO()
-                                writer = pd.ExcelWriter(output, engine='xlsxwriter')
-                                
-                                # 生成混合物名称用于文件命名
-                                mixture_name = "_".join([f.replace(" ", "") for f in formulas[:3]])
-                                if len(formulas) > 3:
-                                    mixture_name += "_etc"
-                                
-                                # 保存透射率数据
-                                transmission_df = pd.DataFrame({
-                                    'Energy (MeV)': energy_range,
-                                    'Transmission': transmission
-                                })
-                                transmission_df.to_excel(writer, sheet_name='Transmission')
-                                
-                                # 保存关键点数据
-                                if len(key_energies) > 0:
-                                    key_points_df = pd.DataFrame({
-                                        'Energy (MeV)': key_energies,
-                                        'Transmission': [t for t in key_transmissions]
-                                    })
-                                    key_points_df.to_excel(writer, sheet_name='Key Points')
-                                
-                                # 保存混合物信息
-                                element_symbols = [elem[0] for elem in mixture_definition]
-                                element_counts = [elem[1] for elem in mixture_definition]
-                                mixture_info_df = pd.DataFrame({
-                                    'Element': element_symbols,
-                                    'Count': element_counts,
-                                    'Mass Fraction': [weights.get(elem, 0) for elem in element_symbols],
-                                    'Density (g/cm³)': densities
-                                })
-                                mixture_info_df.to_excel(writer, sheet_name='Mixture Info')
-                                
-                                writer.close()
-                                output.seek(0)
-                                
-                                st.download_button(
-                                    label="下载透射率数据",
-                                    data=output,
-                                    file_name=f"{mixture_name}_transmission.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                # 成分贡献图
+                                fig_components = plot_mixture_components(
+                                    st.session_state.elements,
+                                    mixture_definition,
+                                    e_min=st.session_state.mixture_energy_min, 
+                                    e_max=st.session_state.mixture_energy_max, 
+                                    points=st.session_state.mixture_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale=y_scale_value,
+                                    return_fig=True
                                 )
-                except Exception as e:
-                    st.error(f"Calculation error: {str(e)}")
+                                
+                                # 提取成分贡献图数据
+                                components_plot_data = {}
+                                if fig_components:
+                                    energy_range = np.linspace(st.session_state.mixture_energy_min, st.session_state.mixture_energy_max, st.session_state.mixture_num_points)
+                                    for ax in fig_components.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            y_data = line.get_ydata()
+                                            components_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 物理效应图
+                                fig_effects = plot_mixture_effect_contributions(
+                                    st.session_state.elements,
+                                    mixture_definition,
+                                    e_min=st.session_state.mixture_energy_min, 
+                                    e_max=st.session_state.mixture_energy_max, 
+                                    points=st.session_state.mixture_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale=y_scale_value,
+                                    return_fig=True
+                                )
+                                
+                                # 提取物理效应图数据
+                                effects_plot_data = {}
+                                if fig_effects:
+                                    energy_range = np.linspace(st.session_state.mixture_energy_min, st.session_state.mixture_energy_max, st.session_state.mixture_num_points)
+                                    for ax in fig_effects.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            y_data = line.get_ydata()
+                                            effects_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 透射率图
+                                fig_transmission = plot_mixture_transmission(
+                                    st.session_state.elements,
+                                    mixture_definition,
+                                    e_min=st.session_state.mixture_energy_min, 
+                                    e_max=st.session_state.mixture_energy_max, 
+                                    mixture_thickness=st.session_state.mixture_thickness,
+                                    points=st.session_state.mixture_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale='linear',
+                                    return_fig=True
+                                )
+                                
+                                # 提取透射率图数据
+                                transmission_plot_data = {}
+                                if fig_transmission:
+                                    energy_range = np.linspace(st.session_state.mixture_energy_min, st.session_state.mixture_energy_max, st.session_state.mixture_num_points)
+                                    for ax in fig_transmission.get_axes():
+                                        for line in ax.get_lines():
+                                            label = line.get_label()
+                                            if label.startswith('_'): continue
+                                            if not label or label == '_line0': label = 'Transmission'
+                                            y_data = line.get_ydata()
+                                            transmission_plot_data[label] = {'x': energy_range, 'y': y_data}
+                                
+                                # 保存结果到session_state
+                                st.session_state[result_key] = {
+                                    'fig_components': fig_components,
+                                    'fig_effects': fig_effects,
+                                    'fig_transmission': fig_transmission,
+                                    'components_plot_data': components_plot_data,
+                                    'effects_plot_data': effects_plot_data,
+                                    'transmission_plot_data': transmission_plot_data,
+                                    'plot_type': 'Component Contribution',
+                                    'formulas': formulas,
+                                    'weights': weights,
+                                    'densities': densities,
+                                    'mixture_density': mixture_density
+                                }
+                            else:
+                                # 仅显示透射率图
+                                mixture_definition = [{"formula": f, "proportion": w, "density": d} 
+                                                    for f, w, d in zip(formulas, weights, densities)]
+                                
+                                fig = plot_mixture_transmission(
+                                    st.session_state.elements,
+                                    mixture_definition,
+                                    e_min=st.session_state.mixture_energy_min, 
+                                    e_max=st.session_state.mixture_energy_max, 
+                                    mixture_thickness=st.session_state.mixture_thickness,
+                                    points=st.session_state.mixture_num_points,
+                                    x_scale=x_scale_value,
+                                    y_scale='linear' if y_scale_value == 'linear' else 'log',
+                                    return_fig=True
+                                )
+                                
+                                # 计算关键能量点的透射率
+                                key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000
+                                key_energies = np.array([e for e in key_energies if st.session_state.mixture_energy_min <= e <= st.session_state.mixture_energy_max])
+                                
+                                key_transmissions = []
+                                transmission_plot_data = {}
+                                if len(key_energies) > 0:
+                                    # 计算传输率 - 简化版本
+                                    energy_range = np.linspace(st.session_state.mixture_energy_min, st.session_state.mixture_energy_max, st.session_state.mixture_num_points)
+                                    total_cross_section = np.zeros_like(energy_range)
+                                    for formula, weight in zip(formulas, weights):
+                                        try:
+                                            cross_section = st.session_state.elements.calculate_compound_cross_section(
+                                                formula, energy_range
+                                            )
+                                            if cross_section is not None:
+                                                if isinstance(cross_section, tuple):
+                                                    cross_section = cross_section[0]  # 取第一个元素
+                                                total_cross_section += cross_section * (weight / 100)
+                                        except Exception as e:
+                                            continue
+                                    
+                                    transmission = np.exp(-total_cross_section * mixture_density * st.session_state.mixture_thickness)
+                                    key_indices = [np.abs(energy_range - e).argmin() for e in key_energies]
+                                    key_transmissions = [transmission[i] for i in key_indices]
+                                    # 保存透射率数据
+                                    transmission_plot_data['Transmission'] = {'x': energy_range, 'y': transmission}
+                                
+                                # 保存结果到session_state
+                                st.session_state[result_key] = {
+                                    'fig': fig,
+                                    'plot_type': 'Transmission',
+                                    'formulas': formulas,
+                                    'weights': weights,
+                                    'densities': densities,
+                                    'mixture_density': mixture_density,
+                                    'key_energies': key_energies,
+                                    'key_transmissions': key_transmissions,
+                                    'transmission_plot_data': transmission_plot_data
+                                }
+                
+                    except Exception as e:
+                        st.error(f"Calculation error: {str(e)}")
+                        return
+            
+            # 显示保存的结果
+            if result_key in st.session_state:
+                result = st.session_state[result_key]
+                
+                # 显示混合物信息
+                st.subheader("Mixture Information")
+                st.write(f"Mixture Average Density: {result['mixture_density']:.4f} g/cm³")
+                
+                component_data = []
+                for formula, weight, density in zip(result['formulas'], result['weights'], result['densities']):
+                    component_data.append({
+                        "Formula": formula,
+                        "Weight Percent": f"{weight:.2f}%",
+                        "Density": f"{density:.4f} g/cm³"
+                    })
+                st.table(component_data)
+                
+                if result['plot_type'] == "Component Contribution":
+                    # 使用plot_mixture_all显示多个图表
+                    st.subheader("混合物成分与透射分析")
+                    st.info("正在显示缓存的图表...")
+                    
+                    col_figs1, col_figs2 = st.columns(2)
+                    
+                    with col_figs1:
+                        # 成分贡献图
+                        if result['fig_components']:
+                            st.pyplot(result['fig_components'])
+                            compound_name = st.session_state.compound_formula.replace(" ", "")
+                            create_download_buttons(
+                                result['fig_components'], 
+                                f"{compound_name}_components",
+                                result['components_plot_data']
+                            )
+                            st.caption("混合物成分贡献图")
+                    
+                    with col_figs2:
+                        # 物理效应图
+                        if result['fig_effects']:
+                            st.pyplot(result['fig_effects'])
+                            create_download_buttons(
+                                result['fig_effects'], 
+                                f"{compound_name}_effects",
+                                result['effects_plot_data']
+                            )
+                            st.caption("物理效应贡献图")
+                    
+                    # 透射率图
+                    st.subheader("混合物透射率")
+                    if result['fig_transmission']:
+                        st.pyplot(result['fig_transmission'])
+                        create_download_buttons(
+                            result['fig_transmission'], 
+                            f"{compound_name}_transmission",
+                            result['transmission_plot_data']
+                        )
+                        st.caption("透射率图")
+                else:
+                    # 仅显示透射率图
+                    if result['fig']:
+                        st.pyplot(result['fig'])
+                        compound_name = st.session_state.compound_formula.replace(" ", "")
+                        create_download_buttons(
+                            result['fig'], 
+                            f"{compound_name}_transmission",
+                            result['transmission_plot_data']
+                        )
+                        st.caption("透射率图")
+                    
+                    # 显示关键能量点的透射率
+                    if len(result['key_energies']) > 0:
+                        st.subheader("Key Point Transmission")
+                        data = {
+                            "Energy (MeV)": result['key_energies'],
+                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
+                        }
+                        st.table(data)
 
     # Footer
     st.markdown("---")

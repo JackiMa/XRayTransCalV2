@@ -153,7 +153,7 @@ class Element:
                                  
                                  # 为避免插值时的x值重复问题，给吸收边后的能量值加上极小偏移
                                  # 增加1e-12 MeV的偏移量
-                                 adjusted_energy = edge_energy + 1e-12
+                                 adjusted_energy = edge_energy + 1e-6
                                  adjusted_data_line = f"{adjusted_energy:.6E} " + " ".join(parts[1:])
                                  data_lines.append(adjusted_data_line)
                                  data_started = True
@@ -177,8 +177,8 @@ class Element:
                                  # 如果是，给它一个小的偏移避免重复
                                  energy_offset = 0.0
                                  for edge_energy in absorption_edge_energies:
-                                     if abs(energy - edge_energy) < 1e-10:  # 极小的容差
-                                         energy_offset = -1e-12  # 吸收边前的数据点向前偏移
+                                     if abs(energy - edge_energy) < 1e-5:  # 极小的容差
+                                         energy_offset = -1e-6  # 吸收边前的数据点向前偏移
                                          break
                                  
                                  if energy_offset != 0.0:
