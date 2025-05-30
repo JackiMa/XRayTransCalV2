@@ -8,6 +8,10 @@ import os
 import pandas as pd
 import time
 
+# 设置matplotlib的显示DPI，提高图像清晰度
+plt.rcParams['figure.dpi'] = 150  # 显示DPI适中即可
+plt.rcParams['savefig.dpi'] = 300  # PDF矢量格式，DPI不需要太高
+
 # Import core modules from the project
 from xray_model import Elements
 from xray_plot import (
@@ -202,12 +206,57 @@ initialize_session_state()
 os.makedirs("tmp_plots", exist_ok=True)
 
 # Helper function: Convert image to base64 encoding to embed in the page
-def get_image_base64(fig):
+def get_image_pdf(fig):
+    """将matplotlib图形转换为高质量的PDF格式的字节数据"""
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+    fig.savefig(buf, format="pdf", bbox_inches="tight")
     buf.seek(0)
-    img_str = base64.b64encode(buf.read()).decode()
-    return img_str
+    return buf.getvalue()
+
+def create_download_buttons(fig, base_filename, plot_data=None):
+    """创建图片和数据下载按钮"""
+    if fig is not None:
+        # PDF图片下载按钮
+        pdf_data = get_image_pdf(fig)
+        st.download_button(
+            label="📄 下载图片 (PDF)",
+            data=pdf_data,
+            file_name=f"{base_filename}.pdf",
+            mime="application/pdf"
+        )
+    
+    if plot_data:
+        # 数据下载按钮
+        output = io.BytesIO()
+        writer = pd.ExcelWriter(output, engine='xlsxwriter')
+        
+        # 根据数据类型创建不同的工作表
+        if isinstance(plot_data, dict):
+            if len(plot_data) == 1 and "Transmission" in plot_data:
+                # 透射率数据
+                transmission_df = pd.DataFrame({
+                    'Energy (MeV)': plot_data["Transmission"]['x'],
+                    'Transmission': plot_data["Transmission"]['y']
+                })
+                transmission_df.to_excel(writer, sheet_name='Transmission', index=False)
+            else:
+                # 截面系数数据
+                df = pd.DataFrame()
+                for label, data in plot_data.items():
+                    if 'Energy (MeV)' not in df:
+                        df['Energy (MeV)'] = data['x']
+                    df[label] = data['y']
+                df.to_excel(writer, sheet_name='Data', index=False)
+        
+        writer.close()
+        output.seek(0)
+        
+        st.download_button(
+            label="📊 下载数据 (Excel)",
+            data=output,
+            file_name=f"{base_filename}_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 # Main application interface
 def main():
@@ -426,6 +475,13 @@ def main():
                                     df[label] = y_data
                                     plot_data[label] = {'x': energy_range, 'y': y_data}
                             
+                            # 添加下载按钮
+                            create_download_buttons(
+                                fig, 
+                                f"{st.session_state.element_symbol}_cross_sections", 
+                                plot_data
+                            )
+                            
                             plt.close(fig)
                             
                             # 同时绘制效应贡献图
@@ -477,7 +533,28 @@ def main():
                                 ax.set_ylim(0.001, 1.05)  # 对数坐标下调整下限，除非用户自定义
                         
                         st.pyplot(fig)
+                        
+                        # 保存透射率图数据并添加下载按钮
+                        transmission_plot_data = {}
+                        for ax in fig.get_axes():
+                            for line in ax.get_lines():
+                                label = line.get_label()
+                                if label.startswith('_'): continue  # 跳过辅助线
+                                if not label or label == '_line0': label = 'Transmission'
+                                x_data = line.get_xdata()
+                                y_data = line.get_ydata()
+                                plot_data[label] = {'x': x_data, 'y': y_data}
+                                transmission_plot_data[label] = {'x': x_data, 'y': y_data}
+                        
+                        # 添加下载按钮
+                        create_download_buttons(
+                            fig, 
+                            f"{st.session_state.element_symbol}_transmission", 
+                            transmission_plot_data
+                        )
+                        
                         plt.close(fig)
+                        st.caption("透射率图")
                         
                         # 显示关键能量点的透射率
                         st.subheader("Key Point Transmission")
@@ -494,44 +571,6 @@ def main():
                             }
                             st.table(data)
                     
-                    # 优化数据下载功能，合并到一个Excel文件中
-                    if plot_data:
-                        output = io.BytesIO()
-                        writer = pd.ExcelWriter(output, engine='xlsxwriter')
-                        
-                        if st.session_state.element_plot_type == "Cross Section":
-                            # 对于截面系数图，将所有数据放在一个工作表中
-                            df = pd.DataFrame()
-                            for label, data in plot_data.items():
-                                if 'Energy (MeV)' not in df:
-                                    df['Energy (MeV)'] = data['x']
-                                df[label] = data['y']
-                            df.to_excel(writer, sheet_name='Cross Sections')
-                        else:
-                            # 对于透射率图，创建透射率工作表
-                            transmission_df = pd.DataFrame({
-                                'Energy (MeV)': plot_data["Transmission"]['x'],
-                                'Transmission': plot_data["Transmission"]['y']
-                            })
-                            transmission_df.to_excel(writer, sheet_name='Transmission')
-                            
-                            # 如果有关键点数据，添加关键点工作表
-                            if len(key_energies) > 0:
-                                key_points_df = pd.DataFrame({
-                                    'Energy (MeV)': key_energies,
-                                    'Transmission': [t for t in key_transmissions]
-                                })
-                                key_points_df.to_excel(writer, sheet_name='Key Points')
-                        
-                        writer.close()
-                        output.seek(0)
-                        
-                        st.download_button(
-                            label="下载图表数据",
-                            data=output,
-                            file_name=f"{st.session_state.element_symbol}_{st.session_state.element_plot_type.replace(' ', '_')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
                 except Exception as e:
                     st.error(f"Calculation error: {str(e)}")
     
@@ -723,7 +762,8 @@ def main():
                                 if fig:
                                     st.pyplot(fig)
                                     
-                                    # 保存成分贡献图数据
+                                    # 保存成分贡献图数据并添加下载按钮
+                                    component_plot_data = {}
                                     energy_range = np.linspace(compound_energy_min, compound_energy_max, compound_num_points)
                                     for ax in fig.get_axes():
                                         for line in ax.get_lines():
@@ -732,6 +772,14 @@ def main():
                                             x_data = line.get_xdata()
                                             y_data = line.get_ydata()
                                             plot_data_all[f"Component_{label}"] = {'x': x_data, 'y': y_data}
+                                            component_plot_data[label] = {'x': x_data, 'y': y_data}
+                                    
+                                    # 添加下载按钮
+                                    create_download_buttons(
+                                        fig, 
+                                        f"{compound_formula.replace(' ', '')}_components", 
+                                        component_plot_data
+                                    )
                                     
                                     plt.close(fig)
                                     st.caption("元素成分贡献图")
@@ -755,7 +803,8 @@ def main():
                                 if fig:
                                     st.pyplot(fig)
                                     
-                                    # 保存物理效应图数据
+                                    # 保存物理效应图数据并添加下载按钮
+                                    effect_plot_data = {}
                                     for ax in fig.get_axes():
                                         for line in ax.get_lines():
                                             label = line.get_label()
@@ -763,6 +812,14 @@ def main():
                                             x_data = line.get_xdata()
                                             y_data = line.get_ydata()
                                             plot_data_all[f"Effect_{label}"] = {'x': x_data, 'y': y_data}
+                                            effect_plot_data[label] = {'x': x_data, 'y': y_data}
+                                    
+                                    # 添加下载按钮
+                                    create_download_buttons(
+                                        fig, 
+                                        f"{compound_formula.replace(' ', '')}_effects", 
+                                        effect_plot_data
+                                    )
                                     
                                     plt.close(fig)
                                     st.caption("物理效应贡献图")
@@ -788,7 +845,8 @@ def main():
                             if fig:
                                 st.pyplot(fig)
                                 
-                                # 保存透射率图数据
+                                # 保存透射率图数据并添加下载按钮
+                                transmission_plot_data = {}
                                 for ax in fig.get_axes():
                                     for line in ax.get_lines():
                                         label = line.get_label()
@@ -797,6 +855,14 @@ def main():
                                         x_data = line.get_xdata()
                                         y_data = line.get_ydata()
                                         plot_data_all[label] = {'x': x_data, 'y': y_data}
+                                        transmission_plot_data[label] = {'x': x_data, 'y': y_data}
+                                
+                                # 添加下载按钮
+                                create_download_buttons(
+                                    fig, 
+                                    f"{compound_formula.replace(' ', '')}_transmission", 
+                                    transmission_plot_data
+                                )
                                 
                                 plt.close(fig)
                                 st.caption("透射率图")
@@ -1219,6 +1285,8 @@ def main():
                                 if fig:
                                     st.pyplot(fig)
                                     
+                                    # 保存成分贡献图数据并添加下载按钮
+                                    component_plot_data = {}
                                     # 保存成分贡献图数据
                                     for ax in fig.get_axes():
                                         for line in ax.get_lines():
@@ -1248,7 +1316,8 @@ def main():
                                 if fig:
                                     st.pyplot(fig)
                                     
-                                    # 保存物理效应图数据
+                                    # 保存物理效应图数据并添加下载按钮
+                                    effect_plot_data = {}
                                     for ax in fig.get_axes():
                                         for line in ax.get_lines():
                                             label = line.get_label()
@@ -1256,6 +1325,14 @@ def main():
                                             x_data = line.get_xdata()
                                             y_data = line.get_ydata()
                                             plot_data_all[f"Effect_{label}"] = {'x': x_data, 'y': y_data}
+                                            effect_plot_data[label] = {'x': x_data, 'y': y_data}
+                                    
+                                    # 添加下载按钮
+                                    create_download_buttons(
+                                        fig, 
+                                        f"{compound_formula.replace(' ', '')}_effects", 
+                                        effect_plot_data
+                                    )
                                     
                                     plt.close(fig)
                                     st.caption("物理效应贡献图")
@@ -1278,7 +1355,8 @@ def main():
                             if fig:
                                 st.pyplot(fig)
                                 
-                                # 保存透射率图数据
+                                # 保存透射率图数据并添加下载按钮
+                                transmission_plot_data = {}
                                 for ax in fig.get_axes():
                                     for line in ax.get_lines():
                                         label = line.get_label()
@@ -1287,6 +1365,14 @@ def main():
                                         x_data = line.get_xdata()
                                         y_data = line.get_ydata()
                                         plot_data_all[label] = {'x': x_data, 'y': y_data}
+                                        transmission_plot_data[label] = {'x': x_data, 'y': y_data}
+                                
+                                # 添加下载按钮
+                                create_download_buttons(
+                                    fig, 
+                                    f"{compound_formula.replace(' ', '')}_transmission", 
+                                    transmission_plot_data
+                                )
                                 
                                 plt.close(fig)
                                 st.caption("透射率图")

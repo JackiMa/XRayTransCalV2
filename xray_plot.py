@@ -20,8 +20,9 @@ from xray_model import Element, Elements, DEFAULT_INTERPOLATION_POINTS
 
 # 绘图默认设置
 plt.rcParams['figure.figsize'] = (10, 6)
-plt.rcParams['figure.dpi'] = 300
-plt.rcParams['legend.fontsize'] = 10
+plt.rcParams['figure.dpi'] = 150  # 显示DPI适中即可
+plt.rcParams['savefig.dpi'] = 300  # PDF矢量格式，DPI不需要太高
+plt.rcParams['legend.fontsize'] = 14
 plt.rcParams['font.family'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False  # Fix for minus sign display issue
 
@@ -90,7 +91,7 @@ def plot_element_cross_sections(element: Element,
 
     # --- Prepare figure and axes ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1)) # Slightly larger figure for bigger fonts
-    base_fontsize = 15 # Increased base font size
+    base_fontsize = 22 # Increased base font size
 
     # --- Define columns and labels (remains the same) ---
     cols_to_plot = {
@@ -145,9 +146,9 @@ def plot_element_cross_sections(element: Element,
         title_name = element.name if hasattr(element, 'name') and element.name else element.symbol
         title_z = f" (Z={element.z})" if hasattr(element, 'z') and element.z else ""
         ax.set_title(f'{title_name}{title_z} Attenuation Coefficients', fontsize=base_fontsize * 1.1)
-        ax.legend(loc='best', fontsize=base_fontsize * 0.9)
+        ax.legend(loc='best', fontsize=base_fontsize * 0.75)
         _apply_tick_grid_styles(ax) # Apply new grid/tick styles
-        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
         if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
     plt.tight_layout()
 
@@ -214,7 +215,7 @@ def plot_compound_components(elements: Elements,
 
     # --- Prepare figure ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1)) # Larger figure
-    base_fontsize = 15 # Increased base font size
+    base_fontsize = 22 # Increased base font size
 
     # --- Handle calculation errors ---
     if compound_results is None:
@@ -249,9 +250,9 @@ def plot_compound_components(elements: Elements,
             ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
             ax.set_ylabel('Mass Attenuation Coefficient (cm²/g)', fontsize=base_fontsize)
             ax.set_title(f'Element Contributions to {formula} Attenuation', fontsize=base_fontsize * 1.1)
-            ax.legend(loc='best', fontsize=base_fontsize * 0.9)
+            ax.legend(loc='best', fontsize=base_fontsize * 0.75)
             _apply_tick_grid_styles(ax) # Apply new grid/tick styles
-            ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+            ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
             if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
         else:
             # Handles cases where calculation worked but results were all NaN/inf
@@ -310,7 +311,7 @@ def plot_compound_effect_contributions(elements: Elements,
     compound_results = elements.calculate_compound_cross_section(formula, energies, with_coherent=True)
 
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1))
-    base_fontsize = 15
+    base_fontsize = 22
 
     if compound_results is None:
         warnings.warn(f"Cannot calculate effect contributions for {formula}.")
@@ -353,9 +354,9 @@ def plot_compound_effect_contributions(elements: Elements,
         ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
         ax.set_ylabel('Contribution to μ/ρ (cm²/g)', fontsize=base_fontsize) # Updated Label
         ax.set_title(f'Interaction Effect Contributions for {formula}', fontsize=base_fontsize * 1.1)
-        ax.legend(loc='best', fontsize=base_fontsize * 0.9) # Legend inside plot now
+        ax.legend(loc='best', fontsize=base_fontsize * 0.75) # Legend inside plot now
         _apply_tick_grid_styles(ax)
-        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
         if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
     elif total_mu_rho_w_coh is not None: # If calc worked but no valid data points
          ax.text(0.5, 0.5, f'Cannot plot effect contributions: {formula}\n(No valid data points)', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, color='red', fontsize=base_fontsize)
@@ -419,7 +420,7 @@ def plot_compound_transmission(elements: Elements,
 
     # --- Prepare figure ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1)) # Larger figure
-    base_fontsize = 15 # Increased base font size
+    base_fontsize = 22 # Increased base font size
 
     # --- Handle calculation errors ---
     if transmission is None or np.all(np.isnan(transmission)):
@@ -439,9 +440,9 @@ def plot_compound_transmission(elements: Elements,
         ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
         ax.set_ylabel('Transmission Rate (%)', fontsize=base_fontsize)
         ax.set_title(f'{formula}, {density:.2f} g/cm³, {thickness:.2f} cm Transmission', fontsize=base_fontsize * 1.1)
-        ax.legend(loc='best', fontsize=base_fontsize * 0.9)
+        ax.legend(loc='best', fontsize=base_fontsize * 0.75)
         _apply_tick_grid_styles(ax) # Apply new grid/tick styles
-        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
         if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
         # Set y-axis limits appropriately for linear or log scale
         if y_scale == 'linear':
@@ -619,7 +620,7 @@ def plot_mixture_components(elements: Elements,
 
     # --- Prepare figure ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1))
-    base_fontsize = 15
+    base_fontsize = 22
 
     # --- Handle calculation errors ---
     if mixture_results is None:
@@ -657,9 +658,9 @@ def plot_mixture_components(elements: Elements,
             ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
             ax.set_ylabel('Mass Attenuation Coefficient (cm²/g)', fontsize=base_fontsize)
             ax.set_title('Formula Contributions to Mixture Attenuation', fontsize=base_fontsize * 1.1)
-            ax.legend(loc='best', fontsize=base_fontsize * 0.9)
+            ax.legend(loc='best', fontsize=base_fontsize * 0.75)
             _apply_tick_grid_styles(ax) # Apply new grid/tick styles
-            ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+            ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
             if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
         elif not plot_successful: # Handle case where calculation worked but resulted in no plottable data
              ax.text(0.5, 0.5, 'Cannot plot mixture components\n(No valid data points)', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, color='red', fontsize=base_fontsize)
@@ -721,7 +722,7 @@ def plot_mixture_effect_contributions(elements: Elements,
 
     # --- Prepare figure ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1))
-    base_fontsize = 15
+    base_fontsize = 22
 
     if mixture_results is None:
         warnings.warn(f"Cannot calculate effect contributions for the mixture.")
@@ -764,9 +765,9 @@ def plot_mixture_effect_contributions(elements: Elements,
         ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
         ax.set_ylabel('Contribution to μ/ρ (cm²/g)', fontsize=base_fontsize) # Updated Label
         ax.set_title(f'Interaction Effect Contributions for Mixture', fontsize=base_fontsize * 1.1)
-        ax.legend(loc='best', fontsize=base_fontsize * 0.9) # Legend inside
+        ax.legend(loc='best', fontsize=base_fontsize * 0.75) # Legend inside
         _apply_tick_grid_styles(ax)
-        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
         if y_min is not None and y_max is not None: ax.set_ylim(y_min, y_max)
     elif total_mu_rho_mix is not None: # Calc worked but no valid points
          ax.text(0.5, 0.5, f'Cannot plot mixture effect contributions\n(No valid data points)', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, color='red', fontsize=base_fontsize)
@@ -865,7 +866,7 @@ def plot_mixture_transmission(elements: Elements,
 
     # --- Prepare figure ---
     fig, ax = plt.subplots(figsize=(10 * 1.1, 6 * 1.1)) # Larger figure
-    base_fontsize = 15 # Increased base font size
+    base_fontsize = 22 # Increased base font size
 
     # --- Handle calculation errors for transmission ---
     if transmission is None or np.all(np.isnan(transmission)):
@@ -885,9 +886,9 @@ def plot_mixture_transmission(elements: Elements,
         ax.set_xlabel('Photon Energy (MeV)', fontsize=base_fontsize)
         ax.set_ylabel('Transmission Rate (%)', fontsize=base_fontsize)
         ax.set_title(f'Mixture Transmission ({density_source} g/cm³, {mixture_thickness:.2f} cm)', fontsize=base_fontsize * 1.1) # Show density source
-        ax.legend(loc='best', fontsize=base_fontsize * 0.9)
+        ax.legend(loc='best', fontsize=base_fontsize * 0.75)
         _apply_tick_grid_styles(ax) # Apply new grid/tick styles
-        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.9)
+        ax.tick_params(axis='both', which='major', labelsize=base_fontsize * 0.75)
 
         # Set y-axis limits
         if y_scale == 'linear':
