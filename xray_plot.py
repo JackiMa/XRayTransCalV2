@@ -20,7 +20,7 @@ from xray_model import Element, Elements, DEFAULT_INTERPOLATION_POINTS
 
 # 绘图默认设置
 plt.rcParams['figure.figsize'] = (10, 6)
-plt.rcParams['figure.dpi'] = 100
+plt.rcParams['figure.dpi'] = 300
 plt.rcParams['legend.fontsize'] = 10
 plt.rcParams['font.family'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False  # Fix for minus sign display issue
@@ -158,7 +158,7 @@ def plot_element_cross_sections(element: Element,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150)
+            fig.savefig(save_path, dpi=300)
             print(f"Chart saved to: {save_path}")
         except Exception as e:
             warnings.warn(f"Error saving chart to {save_path}: {e}")
@@ -267,7 +267,7 @@ def plot_compound_components(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150)
+            fig.savefig(save_path, dpi=300)
             print(f"Chart saved to: {save_path}")
         except Exception as e:
             warnings.warn(f"Error saving chart to {save_path}: {e}")
@@ -369,7 +369,7 @@ def plot_compound_effect_contributions(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150) # Remove bbox_inches
+            fig.savefig(save_path, dpi=300) # Remove bbox_inches
             print(f"Chart saved to: {save_path}")
         except Exception as e: warnings.warn(f"Error saving chart: {e}")
 
@@ -462,7 +462,7 @@ def plot_compound_transmission(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150)
+            fig.savefig(save_path, dpi=300)
             print(f"Chart saved to: {save_path}")
         except Exception as e:
             warnings.warn(f"Error saving chart to {save_path}: {e}")
@@ -512,7 +512,7 @@ def plot_compound_all(elements: Elements,
     )
     if components_fig:
         components_path = os.path.join(save_dir, f"{safe_formula}_components.png") # Use safe_formula
-        try: components_fig.savefig(components_path, dpi=150)
+        try: components_fig.savefig(components_path, dpi=300)
         except Exception as e: warnings.warn(f"Error saving compound components chart: {e}")
         finally: plt.close(components_fig)
         print(f"Compound components chart saved to: {components_path}")
@@ -524,7 +524,7 @@ def plot_compound_all(elements: Elements,
     )
     if effects_fig:
          effects_path = os.path.join(save_dir, f"{safe_formula}_effects.png") # Use safe_formula
-         try: effects_fig.savefig(effects_path, dpi=150) # No bbox_inches needed now
+         try: effects_fig.savefig(effects_path, dpi=300) # No bbox_inches needed now
          except Exception as e: warnings.warn(f"Error saving effect contributions chart: {e}")
          finally: plt.close(effects_fig)
          print(f"Effect contributions chart saved to: {effects_path}")
@@ -537,7 +537,7 @@ def plot_compound_all(elements: Elements,
     )
     if transmission_fig:
         transmission_path = os.path.join(save_dir, f"{safe_formula}_transmission.png") # Use safe_formula
-        try: transmission_fig.savefig(transmission_path, dpi=150)
+        try: transmission_fig.savefig(transmission_path, dpi=300)
         except Exception as e: warnings.warn(f"Error saving compound transmission chart: {e}")
         finally: plt.close(transmission_fig)
         print(f"Compound transmission chart saved to: {transmission_path}")
@@ -673,7 +673,7 @@ def plot_mixture_components(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150)
+            fig.savefig(save_path, dpi=300)
             print(f"Chart saved to: {save_path}")
         except Exception as e:
             warnings.warn(f"Error saving chart to {save_path}: {e}")
@@ -780,7 +780,7 @@ def plot_mixture_effect_contributions(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150) # Remove bbox_inches
+            fig.savefig(save_path, dpi=300) # Remove bbox_inches
             print(f"Chart saved to: {save_path}")
         except Exception as e: warnings.warn(f"Error saving chart: {e}")
 
@@ -908,7 +908,7 @@ def plot_mixture_transmission(elements: Elements,
             try: os.makedirs(save_dir)
             except OSError as e: warnings.warn(f"Cannot create directory {save_dir}: {e}")
         try:
-            fig.savefig(save_path, dpi=150)
+            fig.savefig(save_path, dpi=300)
             print(f"Chart saved to: {save_path}")
         except Exception as e:
             warnings.warn(f"Error saving chart to {save_path}: {e}")
@@ -972,7 +972,7 @@ def plot_mixture_all(elements: Elements,
     )
     if components_fig:
         components_path = os.path.join(save_dir, f"{mixture_name}_components.png") # Unique name
-        try: components_fig.savefig(components_path, dpi=150)
+        try: components_fig.savefig(components_path, dpi=300)
         except Exception as e: warnings.warn(f"Error saving mixture components chart: {e}")
         finally: plt.close(components_fig)
         print(f"Mixture components chart saved to: {components_path}")
@@ -985,7 +985,7 @@ def plot_mixture_all(elements: Elements,
     )
     if effects_fig:
         effects_path = os.path.join(save_dir, f"{mixture_name}_effects.png") # Unique name
-        try: effects_fig.savefig(effects_path, dpi=150) # No bbox_inches needed
+        try: effects_fig.savefig(effects_path, dpi=300) # No bbox_inches needed
         except Exception as e: warnings.warn(f"Error saving mixture effects chart: {e}")
         finally: plt.close(effects_fig)
         print(f"Mixture effects chart saved to: {effects_path}")
@@ -1001,7 +1001,7 @@ def plot_mixture_all(elements: Elements,
     )
     if transmission_fig:
         transmission_path = os.path.join(save_dir, f"{mixture_name}_transmission.png") # Unique name
-        try: transmission_fig.savefig(transmission_path, dpi=150)
+        try: transmission_fig.savefig(transmission_path, dpi=300)
         except Exception as e: warnings.warn(f"Error saving mixture transmission chart: {e}")
         finally: plt.close(transmission_fig)
         print(f"Mixture transmission chart saved to: {transmission_path}")

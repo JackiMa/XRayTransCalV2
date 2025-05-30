@@ -15,8 +15,12 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
 COPY . .
 
 # 安装Python依赖
-RUN pip3 install --no-cache-dir -r requirements.txt
-
+RUN pip3 install --no-cache-dir \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
+    --default-timeout=300 \
+    -r requirements.txt
+    
 # 暴露Streamlit端口
 EXPOSE 8501
 
