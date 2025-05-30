@@ -73,12 +73,13 @@ class Element:
         self._interpolators: Dict[str, interp1d] = {}
         self.A = ATOMIC_WEIGHTS.get(symbol, 0.0) # 添加原子量
         self._is_loaded_successfully = False
+        self.absorption_edges = {}  # 存储吸收边信息 {edge_name: {'energy': float, 'data': list}}
         
         if filepath:
             self._load_from_file(filepath)
     
     def _load_from_file(self, filepath: str) -> None:
-        """从处理后的数据文件加载元素数据，并处理特殊行。"""
+        """从处理后的数据文件加载元素数据，并正确处理吸收边。"""
         self._is_loaded_successfully = False
         try:
             if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
@@ -104,13 +105,16 @@ class Element:
                     except ValueError: pass
                     self.metadata[key] = value
 
-            # --- 更健壮的数据行查找逻辑 ---
+            # --- 更健壮的数据行查找逻辑，包含吸收边处理 ---
             data_lines = []
             header_found = False
             data_started = False
             # 用于匹配数据行的模式：以数字开头（可以是科学计数法），后面跟至少7个数字列
             data_pattern = re.compile(r'^\s*\d+\.\d+E[+-]\d+.*')
-            shell_pattern = re.compile(r'^\s*\d+\s+[A-Z]+\d*') # 匹配如 "90 N3", "95 L1" 等
+            # 匹配吸收边行，如 "48 K", "48 L3", "90 N3" 等
+            shell_pattern = re.compile(r'^\s*(\d+)\s+([A-Z]+\d*)\s+(.*)') 
+            
+            absorption_edge_energies = set()  # 记录吸收边能量，用于后续处理
 
             for line in lines[1:]: # 从第二行开始处理
                 line_stripped = line.strip()
@@ -125,19 +129,64 @@ class Element:
 
                 # 在找到标题行之后，开始寻找数据
                 if header_found:
-                     # 检查是否是壳层标记行，如果是则跳过
-                     if shell_pattern.match(line_stripped):
+                     # 检查是否是吸收边标记行
+                     shell_match = shell_pattern.match(line_stripped)
+                     if shell_match:
+                         z_val = int(shell_match.group(1))
+                         edge_name = shell_match.group(2)
+                         edge_data_str = shell_match.group(3)
+                         
+                         # 解析吸收边行的数据
+                         try:
+                             parts = edge_data_str.split()
+                             if len(parts) >= 8:
+                                 # 第一个部分是能量
+                                 edge_energy = float(parts[0])
+                                 absorption_edge_energies.add(edge_energy)
+                                 
+                                 # 保存吸收边信息
+                                 self.absorption_edges[edge_name] = {
+                                     'energy': edge_energy,
+                                     'data': [float(p) for p in parts],
+                                     'z': z_val
+                                 }
+                                 
+                                 # 为避免插值时的x值重复问题，给吸收边后的能量值加上极小偏移
+                                 # 增加1e-12 MeV的偏移量
+                                 adjusted_energy = edge_energy + 1e-12
+                                 adjusted_data_line = f"{adjusted_energy:.6E} " + " ".join(parts[1:])
+                                 data_lines.append(adjusted_data_line)
+                                 data_started = True
+                                 
+                                 print(f"检测到吸收边: {edge_name} 在能量 {edge_energy:.6E} MeV (调整为 {adjusted_energy:.6E} MeV)")
+                                 
+                         except (ValueError, IndexError) as e:
+                             warnings.warn(f"解析吸收边行时出错: {line_stripped}, 错误: {e}")
                          continue
 
-                     # 检查是否是有效数据行
+                     # 检查是否是普通数据行
                      if data_pattern.match(line_stripped):
                          parts = line_stripped.split()
                          # 确保分割后至少有8个部分，并且第一个部分是数字
                          if len(parts) >= 8:
                              try:
                                  # 尝试将第一个元素转换为浮点数以确认是数据
-                                 float(parts[0])
-                                 data_lines.append(line_stripped)
+                                 energy = float(parts[0])
+                                 
+                                 # 检查这个能量是否是吸收边能量（在已处理的边界附近）
+                                 # 如果是，给它一个小的偏移避免重复
+                                 energy_offset = 0.0
+                                 for edge_energy in absorption_edge_energies:
+                                     if abs(energy - edge_energy) < 1e-10:  # 极小的容差
+                                         energy_offset = -1e-12  # 吸收边前的数据点向前偏移
+                                         break
+                                 
+                                 if energy_offset != 0.0:
+                                     adjusted_energy = energy + energy_offset
+                                     adjusted_data_line = f"{adjusted_energy:.6E} " + " ".join(parts[1:])
+                                     data_lines.append(adjusted_data_line)
+                                 else:
+                                     data_lines.append(line_stripped)
                                  data_started = True
                              except ValueError:
                                  # 如果第一个部分不是数字，则不是数据行
@@ -151,6 +200,8 @@ class Element:
             if not data_lines:
                 warnings.warn(f"在 {filepath} 中未找到有效的数据行。")
                 return
+
+            print(f"共解析到 {len(self.absorption_edges)} 个吸收边: {list(self.absorption_edges.keys())}")
 
             # --- 使用 Pandas 处理收集到的数据行 ---
             from io import StringIO # 确保导入 StringIO
@@ -181,12 +232,15 @@ class Element:
                      self.data = None
                      return
 
+                # 按能量排序确保数据单调性
+                self.data = self.data.sort_values('Energy (MeV)').reset_index(drop=True)
+
                 # 成功加载数据
                 self.energy_min = self.data['Energy (MeV)'].min()
                 self.energy_max = self.data['Energy (MeV)'].max()
                 self.data.dropna(inplace=True)
                 self._is_loaded_successfully = True
-                # print(f"成功加载元素: Z={self.z}, {self.symbol} ({self.name}) ({len(self.data)} 个数据点)")
+                print(f"成功加载元素: Z={self.z}, {self.symbol} ({self.name}) ({len(self.data)} 个数据点)")
 
             except Exception as e:
                 warnings.warn(f"处理 {filepath} 数据时出错: {str(e)}")
@@ -330,6 +384,20 @@ class Element:
         """获取总质量衰减系数 μ/ρ"""
         return self.get_total_cross_section(energies, with_coherent)
 
+    def get_absorption_edges(self) -> Dict[str, Dict[str, Union[float, List[float], int]]]:
+        """获取元素的吸收边信息"""
+        return self.absorption_edges.copy()
+
+    def has_absorption_edge(self, edge_name: str) -> bool:
+        """检查是否存在指定的吸收边"""
+        return edge_name in self.absorption_edges
+
+    def get_absorption_edge_energy(self, edge_name: str) -> Optional[float]:
+        """获取指定吸收边的能量"""
+        if edge_name in self.absorption_edges:
+            return self.absorption_edges[edge_name]['energy']
+        return None
+
 class Elements:
     """元素集合类，用于对化合物进行计算的方法。"""
     
@@ -410,25 +478,58 @@ class Elements:
             return self.elements.get(z_from_name) if z_from_name else None
         return None
     
-    def parse_chemical_formula(self, formula: str) -> Optional[List[Tuple[str, int]]]:
-        """解析化学式，返回元素符号和对应的原子数"""
+    def parse_chemical_formula(self, formula: str) -> Optional[List[Tuple[str, float]]]:
+        """解析化学式，返回元素符号和对应的原子数（支持小数）"""
         if not formula:
             return None
-        pattern = r'([A-Z][a-z]*)(\d*)'
+        
+        # 更新正则表达式以支持小数，包括：
+        # - 整数：H2, O1
+        # - 小数：H0.5, O1.25
+        # - 纯小数：H.5 (等同于H0.5)
+        pattern = r'([A-Z][a-z]*)(\d*\.?\d*|\.\d+)'
         matches = re.findall(pattern, formula)
+        
         # 基础验证：解析出的内容重新组合是否等于原字符串
-        if not matches or ''.join([f'{el}{num}' for el, num in matches]) != formula:
-             warnings.warn(f"无效的化学式格式: {formula}")
-             return None
+        if not matches:
+            warnings.warn(f"无效的化学式格式: {formula}")
+            return None
+            
+        # 重新构建字符串进行验证
+        reconstructed = ''
+        for symbol, count_str in matches:
+            if count_str:
+                # 处理特殊情况：如果是 .5 这样的格式，重新构建时保持原样
+                reconstructed += symbol + count_str
+            else:
+                reconstructed += symbol
+                
+        if reconstructed != formula:
+            warnings.warn(f"无效的化学式格式: {formula}")
+            return None
 
         elements_in_formula = []
         for symbol, count_str in matches:
-            count = int(count_str) if count_str else 1
+            # 处理原子数
+            if not count_str:
+                count = 1.0  # 默认为1
+            else:
+                try:
+                    count = float(count_str)
+                    if count <= 0:
+                        warnings.warn(f"化学式 {formula} 中元素 {symbol} 的原子数必须为正数，当前值: {count}")
+                        return None
+                except ValueError:
+                    warnings.warn(f"化学式 {formula} 中元素 {symbol} 的原子数格式无效: {count_str}")
+                    return None
+                    
             # 检查元素是否存在于已加载数据中
             if self.get(symbol=symbol) is None:
-                 warnings.warn(f"化学式 {formula} 包含未加载或未知的元素 {symbol}。")
-                 return None
+                warnings.warn(f"化学式 {formula} 包含未加载或未知的元素 {symbol}。")
+                return None
+                
             elements_in_formula.append((symbol, count))
+            
         return elements_in_formula
 
     def calculate_mass_fractions(self, formula: str) -> Dict[str, float]:
