@@ -134,10 +134,6 @@ def initialize_session_state():
         st.session_state.element_x_scale = "Log"
     if 'element_y_scale' not in st.session_state:
         st.session_state.element_y_scale = "Log"
-    if 'element_y_min_enabled' not in st.session_state:
-        st.session_state.element_y_min_enabled = False
-    if 'element_y_max_enabled' not in st.session_state:
-        st.session_state.element_y_max_enabled = False
     if 'element_y_min' not in st.session_state:
         st.session_state.element_y_min = 0.00001
     if 'element_y_max' not in st.session_state:
@@ -162,14 +158,10 @@ def initialize_session_state():
         st.session_state.compound_x_scale = "Log"
     if 'compound_y_scale' not in st.session_state:
         st.session_state.compound_y_scale = "Log"
-    if 'compound_y_min_enabled' not in st.session_state:
-        st.session_state.compound_y_min_enabled = False
-    if 'compound_y_max_enabled' not in st.session_state:
-        st.session_state.compound_y_max_enabled = False
     if 'compound_y_min' not in st.session_state:
-        st.session_state.compound_y_min = 0.001
+        st.session_state.compound_y_min = 0.00001
     if 'compound_y_max' not in st.session_state:
-        st.session_state.compound_y_max = 1.0
+        st.session_state.compound_y_max = 10.0
     
     # Mixtures tab 默认值
     if 'mixture_components' not in st.session_state:
@@ -190,10 +182,6 @@ def initialize_session_state():
         st.session_state.mixture_x_scale = "Log"
     if 'mixture_y_scale' not in st.session_state:
         st.session_state.mixture_y_scale = "Log"
-    if 'mixture_y_min_enabled' not in st.session_state:
-        st.session_state.mixture_y_min_enabled = False
-    if 'mixture_y_max_enabled' not in st.session_state:
-        st.session_state.mixture_y_max_enabled = False
     if 'mixture_y_min' not in st.session_state:
         st.session_state.mixture_y_min = 0.001
     if 'mixture_y_max' not in st.session_state:
@@ -201,6 +189,180 @@ def initialize_session_state():
 
 # 调用初始化函数
 initialize_session_state()
+
+# 通用函数：创建共同的计算参数输入
+def create_common_calculation_params(prefix, default_energy_min=0.01, default_energy_max=20.0, default_num_points=5000):
+    """创建通用的计算参数输入组件"""
+    energy_min = st.number_input(
+        "Minimum Energy (MeV)",
+        min_value=0.001,
+        max_value=100000.0,
+        value=st.session_state[f'{prefix}_energy_min'],
+        format="%.4f",
+        key=f"{prefix}_energy_min_input"
+    )
+    st.session_state[f'{prefix}_energy_min'] = energy_min
+    
+    energy_max = st.number_input(
+        "Maximum Energy (MeV)",
+        min_value=0.001,
+        max_value=100000.0,
+        value=st.session_state[f'{prefix}_energy_max'],
+        format="%.4f",
+        key=f"{prefix}_energy_max_input"
+    )
+    st.session_state[f'{prefix}_energy_max'] = energy_max
+    
+    num_points = st.number_input(
+        "Number of Points",
+        min_value=100,
+        max_value=100000,
+        value=st.session_state[f'{prefix}_num_points'],
+        step=100,
+        key=f"{prefix}_num_points_input"
+    )
+    st.session_state[f'{prefix}_num_points'] = num_points
+    
+    return energy_min, energy_max, num_points
+
+def create_axis_controls(prefix):
+    """创建坐标轴控制组件"""
+    col1_scale, col2_scale = st.columns(2)
+    
+    with col1_scale:
+        x_scale = st.radio(
+            "X-Axis Scale",
+            options=["Linear", "Log"],
+            index=1 if st.session_state[f'{prefix}_x_scale'] == "Log" else 0,
+            horizontal=True,
+            key=f"{prefix}_x_scale_input"
+        )
+        st.session_state[f'{prefix}_x_scale'] = x_scale
+    
+    with col2_scale:
+        y_scale = st.radio(
+            "Y-Axis Scale",
+            options=["Linear", "Log"],
+            index=1 if st.session_state[f'{prefix}_y_scale'] == "Log" else 0,
+            horizontal=True,
+            key=f"{prefix}_y_scale_input"
+        )
+        st.session_state[f'{prefix}_y_scale'] = y_scale
+    
+    return x_scale, y_scale
+
+def create_y_range_controls(prefix):
+    """创建Y轴范围控制组件"""
+    col1_yrange, col2_yrange = st.columns(2)
+    
+    with col1_yrange:
+        y_min = st.number_input(
+            "Y Axis Minimum",
+            value=st.session_state[f'{prefix}_y_min'],
+            format="%.6f",
+            key=f"{prefix}_y_min_input"
+        )
+        st.session_state[f'{prefix}_y_min'] = y_min
+    
+    with col2_yrange:
+        y_max = st.number_input(
+            "Y Axis Maximum",
+            value=st.session_state[f'{prefix}_y_max'],
+            format="%.6f",
+            key=f"{prefix}_y_max_input"
+        )
+        st.session_state[f'{prefix}_y_max'] = y_max
+    
+    return y_min, y_max
+
+def display_cached_results(result_key, prefix, filename_base):
+    """显示缓存的结果"""
+    if result_key in st.session_state:
+        result = st.session_state[result_key]
+        
+        # 特殊处理Mixtures选项卡：显示混合物信息
+        if prefix == "mixture" and result.get('formulas') and result.get('weights') and result.get('densities'):
+            st.subheader("Mixture Information")
+            st.write(f"Mixture Average Density: {result['mixture_density']:.4f} g/cm³")
+            
+            component_data = []
+            for formula, weight, density in zip(result['formulas'], result['weights'], result['densities']):
+                component_data.append({
+                    "Formula": formula,
+                    "Weight Percent": f"{weight:.2f}%",
+                    "Density": f"{density:.4f} g/cm³"
+                })
+            st.table(component_data)
+            
+            # 为mixtures生成合适的文件名
+            filename_base = "_".join([f.replace(" ", "") for f in result['formulas'][:3]])
+            if len(result['formulas']) > 3:
+                filename_base += "_etc"
+        
+        if result['plot_type'] == "Component Contribution":
+            # 显示多图表结果
+            st.subheader("成分与透射分析")
+            
+            col_figs1, col_figs2 = st.columns(2)
+            
+            with col_figs1:
+                if result.get('fig_components'):
+                    st.pyplot(result['fig_components'])
+                    create_download_buttons(
+                        result['fig_components'], 
+                        f"{filename_base}_components",
+                        result.get('components_plot_data')
+                    )
+                    st.caption("成分贡献图")
+            
+            with col_figs2:
+                if result.get('fig_effects'):
+                    st.pyplot(result['fig_effects'])
+                    create_download_buttons(
+                        result['fig_effects'], 
+                        f"{filename_base}_effects",
+                        result.get('effects_plot_data')
+                    )
+                    st.caption("物理效应贡献图")
+            
+            # 透射率图
+            st.subheader("透射率")
+            if result.get('fig_transmission'):
+                st.pyplot(result['fig_transmission'])
+                create_download_buttons(
+                    result['fig_transmission'], 
+                    f"{filename_base}_transmission",
+                    result.get('transmission_plot_data')
+                )
+                st.caption("透射率图")
+        
+        elif result['plot_type'] in ["Cross Section", "Transmission"]:
+            # 显示单一图表结果
+            if result.get('fig'):
+                st.pyplot(result['fig'])
+                create_download_buttons(
+                    result['fig'], 
+                    f"{filename_base}_{result['plot_type'].replace(' ', '_').lower()}", 
+                    result.get('plot_data')
+                )
+                
+                # 显示关键能量点透射率（如果有）
+                if result['plot_type'] == 'Transmission' and result.get('key_energies') is not None and len(result['key_energies']) > 0:
+                    st.subheader("Key Point Transmission")
+                    data = {
+                        "Energy (MeV)": result['key_energies'],
+                        "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
+                    }
+                    st.table(data)
+                
+                # 显示Cross Section的额外信息
+                if result['plot_type'] == 'Cross Section':
+                    st.subheader("Element Interaction Effects")
+                    col_effects1, col_effects2 = st.columns(2)
+                    with col_effects1:
+                        st.write("主要物理效应包括：光电效应、相干/非相干散射和对产生")
+                    with col_effects2:
+                        st.write("data from https://physics.nist.gov/PhysRefData/Xcom/html/xcom1.html")
 
 # Create temporary directory (if it doesn't exist)
 os.makedirs("tmp_plots", exist_ok=True)
@@ -335,35 +497,7 @@ def main():
             )
             st.session_state.element_thickness = thickness
             
-            energy_min = st.number_input(
-                "Minimum Energy (MeV)",
-                min_value=0.001,
-                max_value=100000.0,
-                value=st.session_state.element_energy_min,
-                format="%.4f",
-                key="element_energy_min_input"
-            )
-            st.session_state.element_energy_min = energy_min
-            
-            energy_max = st.number_input(
-                "Maximum Energy (MeV)",
-                min_value=0.0001,
-                max_value=100000.0,
-                value=st.session_state.element_energy_max,
-                format="%.4f",
-                key="element_energy_max_input"
-            )
-            st.session_state.element_energy_max = energy_max
-            
-            num_points = st.number_input(
-                "Number of Points",
-                min_value=100,
-                max_value=100000,
-                value=st.session_state.element_num_points,
-                step=100,
-                key="element_num_points_input"
-            )
-            st.session_state.element_num_points = num_points
+            energy_min, energy_max, num_points = create_common_calculation_params("element")
             
             plot_type = st.radio(
                 "Plot Type",
@@ -374,68 +508,10 @@ def main():
             st.session_state.element_plot_type = plot_type
             
             # 添加坐标轴类型选择
-            col1_scale, col2_scale = st.columns(2)
-            
-            with col1_scale:
-                x_scale = st.radio(
-                    "X-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.element_x_scale == "Log" else 0,
-                    horizontal=True,
-                    key="element_x_scale_input"
-                )
-                st.session_state.element_x_scale = x_scale
-            
-            with col2_scale:
-                y_scale = st.radio(
-                    "Y-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.element_y_scale == "Log" else 0,
-                    horizontal=True,
-                    key="element_y_scale_input"
-                )
-                st.session_state.element_y_scale = y_scale
+            x_scale, y_scale = create_axis_controls("element")
             
             # 添加Y轴范围设置
-            col1_yrange, col2_yrange = st.columns(2)
-            
-            with col1_yrange:
-                y_min_enabled = st.checkbox(
-                    "Set Y Min", 
-                    value=st.session_state.element_y_min_enabled, 
-                    key="element_y_min_enabled_input"
-                )
-                st.session_state.element_y_min_enabled = y_min_enabled
-                
-                # 始终显示输入框，但只在启用时使用其值
-                y_min = st.number_input(
-                    "Y Axis Minimum",
-                    value=st.session_state.element_y_min,
-                    format="%.6f",
-                    disabled=not y_min_enabled,
-                    key="element_y_min_input"
-                )
-                if y_min_enabled:
-                    st.session_state.element_y_min = y_min
-            
-            with col2_yrange:
-                y_max_enabled = st.checkbox(
-                    "Set Y Max", 
-                    value=st.session_state.element_y_max_enabled, 
-                    key="element_y_max_enabled_input"
-                )
-                st.session_state.element_y_max_enabled = y_max_enabled
-                
-                # 始终显示输入框，但只在启用时使用其值
-                y_max = st.number_input(
-                    "Y Axis Maximum",
-                    value=st.session_state.element_y_max,
-                    format="%.6f",
-                    disabled=not y_max_enabled,
-                    key="element_y_max_input"
-                )
-                if y_max_enabled:
-                    st.session_state.element_y_max = y_max
+            y_min, y_max = create_y_range_controls("element")
             
             calculate_button = st.button("Calculate", key="calculate_element")
         
@@ -458,8 +534,8 @@ def main():
                         y_scale_value = st.session_state.element_y_scale.lower()
                         
                         # 获取Y轴范围设置
-                        y_min_val = st.session_state.element_y_min if st.session_state.element_y_min_enabled else None
-                        y_max_val = st.session_state.element_y_max if st.session_state.element_y_max_enabled else None
+                        y_min_val = y_min
+                        y_max_val = y_max
                         
                         # 存储绘图数据以便下载
                         plot_data = {}
@@ -469,21 +545,15 @@ def main():
                             fig = plot_element_cross_sections(
                                 element, 
                                 e_min=st.session_state.element_energy_min, 
-                                e_max=st.session_state.element_energy_max, 
+                                e_max=st.session_state.element_energy_max,
+                                y_min=y_min_val,
+                                y_max=y_max_val,
                                 points=st.session_state.element_num_points,
                                 x_scale=x_scale_value,
                                 y_scale=y_scale_value,
                                 return_fig=True
                             )
-                            if fig:
-                                # 应用自定义Y轴范围
-                                if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
-                                    for ax in fig.get_axes():
-                                        current_ylim = ax.get_ylim()
-                                        new_ymin = y_min_val if st.session_state.element_y_min_enabled else current_ylim[0]
-                                        new_ymax = y_max_val if st.session_state.element_y_max_enabled else current_ylim[1]
-                                        ax.set_ylim(new_ymin, new_ymax)
-                                
+                            if fig:   
                                 # 准备下载数据
                                 energy_range = np.linspace(st.session_state.element_energy_min, st.session_state.element_energy_max, st.session_state.element_num_points)
                                 
@@ -523,23 +593,14 @@ def main():
                             ax.grid(True, alpha=0.3)
                             ax.set_xlim(st.session_state.element_energy_min, st.session_state.element_energy_max)
                             
-                            # 应用自定义Y轴范围或默认范围
-                            if st.session_state.element_y_min_enabled or st.session_state.element_y_max_enabled:
-                                default_ymin = 0.001 if y_scale_value == 'log' else 0.0
-                                default_ymax = 1.05
-                                new_ymin = y_min_val if st.session_state.element_y_min_enabled else default_ymin
-                                new_ymax = y_max_val if st.session_state.element_y_max_enabled else default_ymax
-                                ax.set_ylim(new_ymin, new_ymax)
-                            else:
-                                ax.set_ylim(0, 1.05)
+                            # 应用自定义Y轴范围
+                            ax.set_ylim(y_min_val, y_max_val)
                             
                             # 设置坐标轴类型
                             ax.set_xscale(x_scale_value)
                             if y_scale_value == 'log':
                                 # 对于透射图，对数坐标下需要处理0值
                                 ax.set_yscale(y_scale_value)
-                                if not st.session_state.element_y_min_enabled:
-                                    ax.set_ylim(0.001, 1.05)  # 对数坐标下调整下限，除非用户自定义
                             
                             # 计算关键能量点的透射率
                             key_energies = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140]) / 1000  # 转换为MeV
@@ -568,37 +629,7 @@ def main():
                         return
             
             # 显示保存的结果
-            if result_key in st.session_state:
-                result = st.session_state[result_key]
-                fig = result['fig']
-                plot_data = result['plot_data']
-                
-                st.pyplot(fig)
-                
-                # 添加下载按钮
-                create_download_buttons(
-                    fig, 
-                    f"{st.session_state.element_symbol}_{result['plot_type'].replace(' ', '_').lower()}", 
-                    plot_data
-                )
-                
-                if result['plot_type'] == 'Cross Section':
-                    # 同时绘制效应贡献图
-                    st.subheader("Element Interaction Effects")
-                    col_effects1, col_effects2 = st.columns(2)
-                    with col_effects1:
-                        st.write("主要物理效应包括：光电效应、相干/非相干散射和对产生")
-                    with col_effects2:
-                        st.write("data from https://physics.nist.gov/PhysRefData/Xcom/html/xcom1.html")
-                else:
-                    # 显示关键能量点的透射率
-                    if len(result['key_energies']) > 0:
-                        st.subheader("Key Point Transmission")
-                        data = {
-                            "Energy (MeV)": result['key_energies'],
-                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
-                        }
-                        st.table(data)
+            display_cached_results(result_key, "element", st.session_state.element_symbol)
     
     # Compounds tab
     with tabs[1]:
@@ -633,35 +664,7 @@ def main():
             )
             st.session_state.compound_thickness = compound_thickness
             
-            compound_energy_min = st.number_input(
-                "Minimum Energy (MeV)",
-                min_value=0.001,
-                max_value=100000.0,
-                value=st.session_state.compound_energy_min,
-                format="%.4f",
-                key="compound_energy_min_input"
-            )
-            st.session_state.compound_energy_min = compound_energy_min
-            
-            compound_energy_max = st.number_input(
-                "Maximum Energy (MeV)",
-                min_value=0.001,
-                max_value=100000.0,
-                value=st.session_state.compound_energy_max,
-                format="%.4f",
-                key="compound_energy_max_input"
-            )
-            st.session_state.compound_energy_max = compound_energy_max
-            
-            compound_num_points = st.number_input(
-                "Number of Points",
-                min_value=100,
-                max_value=100000,
-                value=st.session_state.compound_num_points,
-                step=100,
-                key="compound_num_points_input"
-            )
-            st.session_state.compound_num_points = compound_num_points
+            energy_min, energy_max, num_points = create_common_calculation_params("compound")
             
             compound_plot_type = st.radio(
                 "Plot Type",
@@ -672,66 +675,10 @@ def main():
             st.session_state.compound_plot_type = compound_plot_type
             
             # 添加坐标轴类型选择
-            col1_scale, col2_scale = st.columns(2)
-            
-            with col1_scale:
-                compound_x_scale = st.radio(
-                    "X-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.compound_x_scale == "Log" else 0,
-                    horizontal=True,
-                    key="compound_x_scale_input"
-                )
-                st.session_state.compound_x_scale = compound_x_scale
-            
-            with col2_scale:
-                compound_y_scale = st.radio(
-                    "Y-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.compound_y_scale == "Log" else 0,
-                    horizontal=True,
-                    key="compound_y_scale_input"
-                )
-                st.session_state.compound_y_scale = compound_y_scale
+            x_scale, y_scale = create_axis_controls("compound")
             
             # 添加Y轴范围设置
-            col1_yrange, col2_yrange = st.columns(2)
-            
-            with col1_yrange:
-                compound_y_min_enabled = st.checkbox(
-                    "Set Y Min", 
-                    value=st.session_state.compound_y_min_enabled, 
-                    key="compound_y_min_enabled_input"
-                )
-                st.session_state.compound_y_min_enabled = compound_y_min_enabled
-                
-                compound_y_min = st.number_input(
-                    "Y Axis Minimum",
-                    value=st.session_state.compound_y_min,
-                    format="%.6f",
-                    disabled=not compound_y_min_enabled,
-                    key="compound_y_min_input"
-                )
-                if compound_y_min_enabled:
-                    st.session_state.compound_y_min = compound_y_min
-            
-            with col2_yrange:
-                compound_y_max_enabled = st.checkbox(
-                    "Set Y Max", 
-                    value=st.session_state.compound_y_max_enabled, 
-                    key="compound_y_max_enabled_input"
-                )
-                st.session_state.compound_y_max_enabled = compound_y_max_enabled
-                
-                compound_y_max = st.number_input(
-                    "Y Axis Maximum",
-                    value=st.session_state.compound_y_max,
-                    format="%.6f",
-                    disabled=not compound_y_max_enabled,
-                    key="compound_y_max_input"
-                )
-                if compound_y_max_enabled:
-                    st.session_state.compound_y_max = compound_y_max
+            y_min, y_max = create_y_range_controls("compound")
             
             calculate_compound_button = st.button("Calculate", key="calculate_compound")
         
@@ -757,6 +704,10 @@ def main():
                         x_scale_value = st.session_state.compound_x_scale.lower()
                         y_scale_value = st.session_state.compound_y_scale.lower()
                         
+                        # 获取Y轴范围设置
+                        y_min_val = y_min
+                        y_max_val = y_max
+
                         if not formula_elements:
                             st.error("Cannot parse chemical formula, please check input format.")
                         else:
@@ -770,6 +721,8 @@ def main():
                                     st.session_state.compound_formula,
                                     e_min=st.session_state.compound_energy_min, 
                                     e_max=st.session_state.compound_energy_max, 
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.compound_num_points,
                                     x_scale=x_scale_value,
                                     y_scale=y_scale_value,
@@ -793,6 +746,8 @@ def main():
                                     st.session_state.compound_formula,
                                     e_min=st.session_state.compound_energy_min, 
                                     e_max=st.session_state.compound_energy_max, 
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.compound_num_points,
                                     x_scale=x_scale_value,
                                     y_scale=y_scale_value,
@@ -818,6 +773,8 @@ def main():
                                     e_max=st.session_state.compound_energy_max, 
                                     density=st.session_state.compound_density,
                                     thickness=st.session_state.compound_thickness,
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.compound_num_points,
                                     x_scale=x_scale_value,
                                     y_scale='linear',
@@ -857,6 +814,8 @@ def main():
                                     e_max=st.session_state.compound_energy_max, 
                                     density=st.session_state.compound_density,
                                     thickness=st.session_state.compound_thickness,
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.compound_num_points,
                                     x_scale=x_scale_value,
                                     y_scale='linear' if y_scale_value == 'linear' else 'log',
@@ -898,69 +857,7 @@ def main():
                         return
             
             # 显示保存的结果
-            if result_key in st.session_state:
-                result = st.session_state[result_key]
-                
-                if result['plot_type'] == "Component Contribution":
-                    # 使用plot_compound_all绘制多个图表
-                    st.subheader("化合物成分与透射分析")
-                    st.info("正在显示缓存的图表...")
-                    
-                    col_figs1, col_figs2 = st.columns(2)
-                    
-                    with col_figs1:
-                        # 成分贡献图
-                        if result['fig_components']:
-                            st.pyplot(result['fig_components'])
-                            compound_name = st.session_state.compound_formula.replace(" ", "")
-                            create_download_buttons(
-                                result['fig_components'], 
-                                f"{compound_name}_components",
-                                result['components_plot_data']
-                            )
-                            st.caption("混合物成分贡献图")
-                    
-                    with col_figs2:
-                        # 物理效应图
-                        if result['fig_effects']:
-                            st.pyplot(result['fig_effects'])
-                            create_download_buttons(
-                                result['fig_effects'], 
-                                f"{compound_name}_effects",
-                                result['effects_plot_data']
-                            )
-                            st.caption("物理效应贡献图")
-                    
-                    # 透射率图
-                    st.subheader("混合物透射率")
-                    if result['fig_transmission']:
-                        st.pyplot(result['fig_transmission'])
-                        create_download_buttons(
-                            result['fig_transmission'], 
-                            f"{compound_name}_transmission",
-                            result['transmission_plot_data']
-                        )
-                        st.caption("透射率图")
-                else:
-                    # 仅显示透射率图
-                    if result['fig']:
-                        st.pyplot(result['fig'])
-                        compound_name = st.session_state.compound_formula.replace(" ", "")
-                        create_download_buttons(
-                            result['fig'], 
-                            f"{compound_name}_transmission",
-                            result['transmission_plot_data']
-                        )
-                        st.caption("透射率图")
-                    
-                    # 显示关键能量点的透射率
-                    if len(result['key_energies']) > 0:
-                        st.subheader("Key Point Transmission")
-                        data = {
-                            "Energy (MeV)": result['key_energies'],
-                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
-                        }
-                        st.table(data)
+            display_cached_results(result_key, "compound", st.session_state.compound_formula)
     
     # Mixtures tab
     with tabs[2]:
@@ -1041,35 +938,7 @@ def main():
             )
             st.session_state.mixture_thickness = mixture_thickness
             
-            mixture_energy_min = st.number_input(
-                "Minimum Energy (MeV)",
-                min_value=0.001,
-                max_value=100000.0,
-                value=st.session_state.mixture_energy_min,
-                format="%.4f",
-                key="mixture_energy_min_input"
-            )
-            st.session_state.mixture_energy_min = mixture_energy_min
-            
-            mixture_energy_max = st.number_input(
-                "Maximum Energy (MeV)",
-                min_value=0.001,
-                max_value=100000.0,
-                value=st.session_state.mixture_energy_max,
-                format="%.1f",
-                key="mixture_energy_max_input"
-            )
-            st.session_state.mixture_energy_max = mixture_energy_max
-            
-            mixture_num_points = st.number_input(
-                "Number of Points",
-                min_value=100,
-                max_value=100000,
-                value=st.session_state.mixture_num_points,
-                step=100,
-                key="mixture_num_points_input"
-            )
-            st.session_state.mixture_num_points = mixture_num_points
+            mixture_energy_min, mixture_energy_max, mixture_num_points = create_common_calculation_params("mixture")
             
             mixture_plot_type = st.radio(
                 "Plot Type",
@@ -1080,66 +949,10 @@ def main():
             st.session_state.mixture_plot_type = mixture_plot_type
             
             # 添加坐标轴类型选择
-            col1_scale, col2_scale = st.columns(2)
-            
-            with col1_scale:
-                mixture_x_scale = st.radio(
-                    "X-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.mixture_x_scale == "Log" else 0,
-                    horizontal=True,
-                    key="mixture_x_scale_input"
-                )
-                st.session_state.mixture_x_scale = mixture_x_scale
-            
-            with col2_scale:
-                mixture_y_scale = st.radio(
-                    "Y-Axis Scale",
-                    options=["Linear", "Log"],
-                    index=1 if st.session_state.mixture_y_scale == "Log" else 0,
-                    horizontal=True,
-                    key="mixture_y_scale_input"
-                )
-                st.session_state.mixture_y_scale = mixture_y_scale
+            x_scale, y_scale = create_axis_controls("mixture")
             
             # 添加Y轴范围设置
-            col1_yrange, col2_yrange = st.columns(2)
-            
-            with col1_yrange:
-                mixture_y_min_enabled = st.checkbox(
-                    "Set Y Min", 
-                    value=st.session_state.mixture_y_min_enabled, 
-                    key="mixture_y_min_enabled_input"
-                )
-                st.session_state.mixture_y_min_enabled = mixture_y_min_enabled
-                
-                mixture_y_min = st.number_input(
-                    "Y Axis Minimum",
-                    value=st.session_state.mixture_y_min,
-                    format="%.6f",
-                    disabled=not mixture_y_min_enabled,
-                    key="mixture_y_min_input"
-                )
-                if mixture_y_min_enabled:
-                    st.session_state.mixture_y_min = mixture_y_min
-            
-            with col2_yrange:
-                mixture_y_max_enabled = st.checkbox(
-                    "Set Y Max", 
-                    value=st.session_state.mixture_y_max_enabled, 
-                    key="mixture_y_max_enabled_input"
-                )
-                st.session_state.mixture_y_max_enabled = mixture_y_max_enabled
-                
-                mixture_y_max = st.number_input(
-                    "Y Axis Maximum",
-                    value=st.session_state.mixture_y_max,
-                    format="%.6f",
-                    disabled=not mixture_y_max_enabled,
-                    key="mixture_y_max_input"
-                )
-                if mixture_y_max_enabled:
-                    st.session_state.mixture_y_max = mixture_y_max
+            y_min, y_max = create_y_range_controls("mixture")
             
             calculate_mixture_button = st.button("Calculate", key="calculate_mixture")
         
@@ -1164,6 +977,10 @@ def main():
                         x_scale_value = st.session_state.mixture_x_scale.lower()
                         y_scale_value = st.session_state.mixture_y_scale.lower()
                         
+                        # 获取Y轴范围设置
+                        y_min_val = y_min
+                        y_max_val = y_max
+
                         if not valid_components:
                             st.error("Please add at least one valid mixture component.")
                         else:
@@ -1190,6 +1007,8 @@ def main():
                                     mixture_definition,
                                     e_min=st.session_state.mixture_energy_min, 
                                     e_max=st.session_state.mixture_energy_max, 
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.mixture_num_points,
                                     x_scale=x_scale_value,
                                     y_scale=y_scale_value,
@@ -1213,6 +1032,8 @@ def main():
                                     mixture_definition,
                                     e_min=st.session_state.mixture_energy_min, 
                                     e_max=st.session_state.mixture_energy_max, 
+                                    y_min=y_min_val,
+                                    y_max=y_max_val,
                                     points=st.session_state.mixture_num_points,
                                     x_scale=x_scale_value,
                                     y_scale=y_scale_value,
@@ -1332,82 +1153,7 @@ def main():
                         return
             
             # 显示保存的结果
-            if result_key in st.session_state:
-                result = st.session_state[result_key]
-                
-                # 显示混合物信息
-                st.subheader("Mixture Information")
-                st.write(f"Mixture Average Density: {result['mixture_density']:.4f} g/cm³")
-                
-                component_data = []
-                for formula, weight, density in zip(result['formulas'], result['weights'], result['densities']):
-                    component_data.append({
-                        "Formula": formula,
-                        "Weight Percent": f"{weight:.2f}%",
-                        "Density": f"{density:.4f} g/cm³"
-                    })
-                st.table(component_data)
-                
-                if result['plot_type'] == "Component Contribution":
-                    # 使用plot_mixture_all显示多个图表
-                    st.subheader("混合物成分与透射分析")
-                    st.info("正在显示缓存的图表...")
-                    
-                    col_figs1, col_figs2 = st.columns(2)
-                    
-                    with col_figs1:
-                        # 成分贡献图
-                        if result['fig_components']:
-                            st.pyplot(result['fig_components'])
-                            compound_name = st.session_state.compound_formula.replace(" ", "")
-                            create_download_buttons(
-                                result['fig_components'], 
-                                f"{compound_name}_components",
-                                result['components_plot_data']
-                            )
-                            st.caption("混合物成分贡献图")
-                    
-                    with col_figs2:
-                        # 物理效应图
-                        if result['fig_effects']:
-                            st.pyplot(result['fig_effects'])
-                            create_download_buttons(
-                                result['fig_effects'], 
-                                f"{compound_name}_effects",
-                                result['effects_plot_data']
-                            )
-                            st.caption("物理效应贡献图")
-                    
-                    # 透射率图
-                    st.subheader("混合物透射率")
-                    if result['fig_transmission']:
-                        st.pyplot(result['fig_transmission'])
-                        create_download_buttons(
-                            result['fig_transmission'], 
-                            f"{compound_name}_transmission",
-                            result['transmission_plot_data']
-                        )
-                        st.caption("透射率图")
-                else:
-                    # 仅显示透射率图
-                    if result['fig']:
-                        st.pyplot(result['fig'])
-                        compound_name = st.session_state.compound_formula.replace(" ", "")
-                        create_download_buttons(
-                            result['fig'], 
-                            f"{compound_name}_transmission",
-                            result['transmission_plot_data']
-                        )
-                        st.caption("透射率图")
-                    
-                    # 显示关键能量点的透射率
-                    if len(result['key_energies']) > 0:
-                        st.subheader("Key Point Transmission")
-                        data = {
-                            "Energy (MeV)": result['key_energies'],
-                            "Transmission": [f"{t:.4f}" for t in result['key_transmissions']]
-                        }
-                        st.table(data)
+            display_cached_results(result_key, "mixture", "mixture")
 
     # Footer
     st.markdown("---")
